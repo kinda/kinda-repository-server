@@ -1,0 +1,24 @@
+language: node_js
+node_js:
+- '0.12'
+branches:
+  only:
+  - master
+services:
+- mysql
+before_script:
+- mysql --user=root --execute='CREATE DATABASE IF NOT EXISTS test;'
+- mysql --user=root --execute='GRANT ALL ON test.* TO test@localhost;'
+cache:
+  directories:
+  - node_modules
+deploy:
+  provider: npm
+  email: mvila@3base.com
+  api_key:
+    secure: d7474YBIKaKEWfew+nSKNY0LLzSFI22TPdBR/lbes/uj9n5kuxkMfcr6rYJqHt6UazVsJ3lS5Xi3Epp6aocy7kSY2UiSNM8cVR6+K8vAo774j1LNVI8YIMctcMcq3gS1YaZrI/QP7tGx7SydoH5W/EMPL8FH6Cb4ThyL6EGwxEU=
+notifications:
+  email: false
+  slack:
+    secure: E8CCFD1x79EAJdQnQ3yekbfzFfV98pJXf+FKaHCxzZBWseG2lyXzlEbNywdjg+h5M6uNsARUgQWZ7X2eRhkxMPUeQDSKfLfbhUKmO/S4k5tpVh6V9PfNYUiyqVCYBEpvNL2ZFb9iA8JiQyah2jd0JrmYSvfoykXhdqzwp+GETxk=
+sudo: false
