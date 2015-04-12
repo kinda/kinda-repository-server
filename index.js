@@ -82,7 +82,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   };
 
   this.handlePostItemRequest = function *(ctx) {
-    var requestBody = yield parseBody.json(ctx);
+    var requestBody = yield parseBody.json(ctx, { limit: '8mb' });
     var item = ctx.frontendCollection.unserializeItem(requestBody);
     yield ctx.backendCollection.transaction(function *() {
       item = ctx.backendCollection.createItem(item);
@@ -93,7 +93,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   };
 
   this.handlePutItemRequest = function *(ctx, id) {
-    var requestBody = yield parseBody.json(ctx);
+    var requestBody = yield parseBody.json(ctx, { limit: '8mb' });
     var newItem = ctx.frontendCollection.unserializeItem(requestBody);
     yield ctx.backendCollection.transaction(function *() {
       var item = yield this._getItem(ctx, id);
@@ -103,7 +103,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       ctx.body = ctx.frontendCollection.unserializeItem(item).serialize();
     }.bind(this));
   };
-  
+
   this.handleDeleteItemRequest = function *(ctx, id) {
     var item = yield this._getItem(ctx, id);
     if (item) yield item.delete();
