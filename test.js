@@ -1,6 +1,7 @@
 "use strict";
 
 var http = require('http');
+var nodeURL = require('url');
 var querystring = require('querystring');
 require('co-mocha');
 var assert = require('chai').assert;
@@ -50,7 +51,11 @@ suite('KindaRepositoryServer', function() {
     users = Users.create();
 
     var repositoryServer = KindaRepositoryServer.create();
-    repositoryServer.addCollection(Users, Users);
+    repositoryServer.addCollection(Users, Users, {
+      authorizer: function *(authorization, request) {
+        return authorization === 'secret-token';
+      }
+    });
 
     var server = koa();
     server.use(repositoryServer.getMiddleware('/v1'));
@@ -64,10 +69,19 @@ suite('KindaRepositoryServer', function() {
     yield users.getRepository().database.destroyDatabase();
   });
 
+  var writeAuthorization = function(params) {
+    var authorization = 'secret-token';
+    var parsedURL = nodeURL.parse(params.url, true);
+    _.assign(parsedURL.query, { authorization: authorization });
+    delete parsedURL.search;
+    params.url = nodeURL.format(parsedURL);
+  };
+
   test('put, get and delete an item', function *() {
     var url = serverURL + '/users';
     var body = { firstName: 'Manu', age: 42 };
     var params = { method: 'POST', url: url, body: body };
+    writeAuthorization(params);
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 201);
     var id = res.body.id;
@@ -77,6 +91,7 @@ suite('KindaRepositoryServer', function() {
 
     var url = serverURL + '/users/' + id;
     var params = { method: 'GET', url: url };
+    writeAuthorization(params);
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.body.id, id);
@@ -86,6 +101,7 @@ suite('KindaRepositoryServer', function() {
     var url = serverURL + '/users/' + id;
     var body = { id: id, firstName: 'Manu', age: 43 };
     var params = { method: 'PUT', url: url, body: body };
+    writeAuthorization(params);
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.body.id, id);
@@ -94,6 +110,7 @@ suite('KindaRepositoryServer', function() {
 
     var url = serverURL + '/users/' + id;
     var params = { method: 'GET', url: url };
+    writeAuthorization(params);
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.body.id, id);
@@ -102,6 +119,7 @@ suite('KindaRepositoryServer', function() {
 
     var url = serverURL + '/users/' + id;
     var params = { method: 'DELETE', url: url };
+    writeAuthorization(params);
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 204);
 
@@ -109,6 +127,7 @@ suite('KindaRepositoryServer', function() {
     var query = querystring.stringify(util.encodeObject(options));
     var url = serverURL + '/users/' + id + '?' + query;
     var params = { method: 'GET', url: url };
+    writeAuthorization(params);
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 204);
     assert.isUndefined(res.body);
@@ -117,6 +136,7 @@ suite('KindaRepositoryServer', function() {
   test('get a missing item', function *() {
     var url = serverURL + '/users/xyz';
     var params = { method: 'GET', url: url };
+    writeAuthorization(params);
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 404);
 
@@ -124,6 +144,7 @@ suite('KindaRepositoryServer', function() {
     var query = querystring.stringify(util.encodeObject(options));
     var url = serverURL + '/users/xyz?' + query;
     var params = { method: 'GET', url: url };
+    writeAuthorization(params);
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 204);
     assert.isUndefined(res.body);
@@ -132,6 +153,7 @@ suite('KindaRepositoryServer', function() {
   test('delete a missing item', function *() {
     var url = serverURL + '/users/xyz';
     var params = { method: 'DELETE', url: url };
+    writeAuthorization(params);
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 404);
 
@@ -139,6 +161,7 @@ suite('KindaRepositoryServer', function() {
     var query = querystring.stringify(util.encodeObject(options));
     var url = serverURL + '/users/xyz?' + query;
     var params = { method: 'DELETE', url: url };
+    writeAuthorization(params);
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 204);
     assert.isUndefined(res.body);
@@ -166,6 +189,7 @@ suite('KindaRepositoryServer', function() {
       var query = querystring.stringify(util.encodeObject(options));
       var url = serverURL + '/users?' + query;
       var params = { method: 'GET', url: url };
+      writeAuthorization(params);
       var res = yield httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.deepEqual(res.body, [
@@ -177,6 +201,7 @@ suite('KindaRepositoryServer', function() {
     test('count items', function *() {
       var url = serverURL + '/users/count';
       var params = { method: 'GET', url: url };
+      writeAuthorization(params);
       var res = yield httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.body, 5);
@@ -185,6 +210,7 @@ suite('KindaRepositoryServer', function() {
       var query = querystring.stringify(util.encodeObject(options));
       var url = serverURL + '/users/count?' + query;
       var params = { method: 'GET', url: url };
+      writeAuthorization(params);
       var res = yield httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.body, 2);
