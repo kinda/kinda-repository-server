@@ -44,7 +44,25 @@ suite('KindaRepositoryServer', function() {
         this.addPrimaryKeyProperty('id', String);
         this.addProperty('firstName', String);
         this.addProperty('age', Number);
+
+        this.get = function *() {
+          return this.serialize();
+        }
       });
+
+      this.countRetired = function *() {
+        var items = yield this.findItems();
+        var count = 0;
+        items.forEach(function(item) {
+          if (item.age >= 60) count++;
+        });
+        return count;
+      };
+
+      this.echo = function *(data) {
+        return data;
+      };
+
       this.setRepository(repository);
     });
 
@@ -54,6 +72,17 @@ suite('KindaRepositoryServer', function() {
     repositoryServer.addCollection(Users, Users, {
       authorizer: function *(authorization, request) {
         return authorization === 'secret-token';
+      },
+      customCollectionMethods: {
+        countRetired: true,
+        echo: function *(collection, request) {
+          return {
+            body: yield collection.echo(request.body)
+          }
+        }
+      },
+      customItemMethods: {
+        get: true
       }
     });
 
@@ -170,7 +199,7 @@ suite('KindaRepositoryServer', function() {
   suite('with many items', function() {
     setup(function *() {
       yield users.putItem({ id: 'aaa', firstName: 'Bob', age: 20 });
-      yield users.putItem({ id: 'bbb', firstName: 'Jack', age: 52 });
+      yield users.putItem({ id: 'bbb', firstName: 'Jack', age: 62 });
       yield users.putItem({ id: 'ccc', firstName: 'Alan', age: 40 });
       yield users.putItem({ id: 'ddd', firstName: 'Joe', age: 40 });
       yield users.putItem({ id: 'eee', firstName: 'John', age: 30 });
@@ -193,7 +222,7 @@ suite('KindaRepositoryServer', function() {
       var res = yield httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.deepEqual(res.body, [
-        { id: 'bbb', firstName: 'Jack', age: 52 },
+        { id: 'bbb', firstName: 'Jack', age: 62 },
         { id: 'ccc', firstName: 'Alan', age: 40 }
       ]);
     });
@@ -214,6 +243,34 @@ suite('KindaRepositoryServer', function() {
       var res = yield httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.body, 2);
+    });
+
+    test('call custom method on a collection', function *() {
+      var url = serverURL + '/users/countRetired';
+      var params = { method: 'GET', url: url };
+      writeAuthorization(params);
+      var res = yield httpClient.request(params);
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(res.body, 1);
+    });
+
+    test('call custom method on an item', function *() {
+      var url = serverURL + '/users/aaa/get';
+      var params = { method: 'GET', url: url };
+      writeAuthorization(params);
+      var res = yield httpClient.request(params);
+      assert.strictEqual(res.statusCode, 200);
+      assert.deepEqual(res.body, { id: 'aaa', firstName: 'Bob', age: 20 });
+    });
+
+    test('call custom method with a body', function *() {
+      var data = [{ id: 'aaa', firstName: 'Bob', age: 20 }];
+      var url = serverURL + '/users/echo';
+      var params = { method: 'POST', url: url, body: data };
+      writeAuthorization(params);
+      var res = yield httpClient.request(params);
+      assert.strictEqual(res.statusCode, 201);
+      assert.deepEqual(res.body, data);
     });
   });
 });

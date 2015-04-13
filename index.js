@@ -21,7 +21,9 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       backendClass: backendClass,
       frontendClass: frontendClass,
       slug: slug,
-      authorizer: options.authorizer
+      authorizer: options.authorizer,
+      customCollectionMethods: options.customCollectionMethods || {},
+      customItemMethods: options.customItemMethods || {}
     };
     this.collections.push(collection);
   };
@@ -57,12 +59,47 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     ctx.backendCollection.context = this;
     ctx.frontendCollection = collection.frontendClass.create();
     ctx.frontendCollection.context = this;
-    yield this.handleCollectionRequest(ctx, path);
+    yield this.handleCollectionRequest(ctx, path, next);
   };
 
   this.readAuthorization = function(ctx) {
     var query = util.decodeObject(ctx.query);
     ctx.authorization = this.authorizationUnserializer({ query: query });
+  };
+
+  this.readBody = function *(ctx) {
+    ctx.request.body = yield parseBody.json(ctx, { limit: '8mb' });
+  };
+
+  this.handleCollectionRequest = function *(ctx, path, next) {
+    var fragment1 = path;
+    var fragment2 = '';
+    if (_.startsWith(fragment1, '/')) fragment1 = fragment1.slice(1);
+    var index = fragment1.indexOf('/');
+    if (index !== -1) {
+      fragment2 = fragment1.slice(index + 1);
+      fragment1 = fragment1.slice(0, index);
+    }
+    var method = ctx.method;
+    if (method === 'GET' && fragment1 === 'count' && !fragment2) {
+      yield this.handleCountItemsRequest(ctx);
+    } else if ((method === 'GET' || method === 'POST') && (ctx.collection.customCollectionMethods.hasOwnProperty(fragment1)) && !fragment2) {
+      yield this.handleCustomCollectionMethodRequest(ctx, fragment1);
+    } else if ((method === 'GET' || method === 'POST') && fragment1 && (ctx.collection.customItemMethods.hasOwnProperty(fragment2))) {
+      yield this.handleCustomItemMethodRequest(ctx, fragment1, fragment2);
+    } else if (method === 'GET' && fragment1 && !fragment2) {
+      yield this.handleGetItemRequest(ctx, fragment1);
+    } else if (method === 'POST' && !fragment1 && !fragment2) {
+      yield this.handlePostItemRequest(ctx);
+    } else if (method === 'PUT' && fragment1 && !fragment2) {
+      yield this.handlePutItemRequest(ctx, fragment1);
+    } else if (method === 'DELETE' && fragment1 && !fragment2) {
+      yield this.handleDeleteItemRequest(ctx, fragment1);
+    } else if (method === 'GET' && !fragment1 && !fragment2) {
+      yield this.handleFindItemsRequest(ctx);
+    } else {
+      yield next;
+    }
   };
 
   this.authorizeRequest = function *(ctx, item, method) {
@@ -76,26 +113,6 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     };
     var isAuthorized = yield authorizer(ctx.authorization, request);
     if (!isAuthorized) ctx.throw(403, 'authorization failed');
-  };
-
-  this.handleCollectionRequest = function *(ctx, path) {
-    if (_.startsWith(path, '/')) path = path.slice(1);
-    var method = ctx.method;
-    if (method === 'GET' && path === 'count') {
-      yield this.handleCountItemsRequest(ctx);
-    } else if (method === 'GET' && path) {
-      yield this.handleGetItemRequest(ctx, path);
-    } else if (method === 'POST' && !path) {
-      yield this.handlePostItemRequest(ctx);
-    } else if (method === 'PUT' && path) {
-      yield this.handlePutItemRequest(ctx, path);
-    } else if (method === 'DELETE' && path) {
-      yield this.handleDeleteItemRequest(ctx, path);
-    } else if (method === 'GET' && !path) {
-      yield this.handleFindItemsRequest(ctx);
-    } else {
-      ctx.throw(405); // Method Not Allowed
-    }
   };
 
   this._getItem = function *(ctx, id) {
@@ -120,8 +137,8 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   };
 
   this.handlePostItemRequest = function *(ctx) {
-    var requestBody = yield parseBody.json(ctx, { limit: '8mb' });
-    var item = ctx.frontendCollection.unserializeItem(requestBody);
+    yield this.readBody(ctx);
+    var item = ctx.frontendCollection.unserializeItem(ctx.request.body);
     yield ctx.backendCollection.transaction(function *() {
       item = ctx.backendCollection.createItem(item);
       yield this.authorizeRequest(ctx, item, 'putItem');
@@ -132,8 +149,8 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   };
 
   this.handlePutItemRequest = function *(ctx, id) {
-    var requestBody = yield parseBody.json(ctx, { limit: '8mb' });
-    var newItem = ctx.frontendCollection.unserializeItem(requestBody);
+    yield this.readBody(ctx);
+    var newItem = ctx.frontendCollection.unserializeItem(ctx.request.body);
     yield ctx.backendCollection.transaction(function *() {
       var item = yield this._getItem(ctx, id);
       yield this.authorizeRequest(ctx, item, 'putItem');
@@ -168,6 +185,41 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     var count = yield ctx.backendCollection.countItems(ctx.options);
     ctx.status = 200;
     ctx.body = count;
+  };
+
+  this.handleCustomCollectionMethodRequest = function *(ctx, method) {
+    if (ctx.method === 'POST') yield this.readBody(ctx);
+    yield this.authorizeRequest(ctx, undefined, method);
+    var fn = ctx.collection.customCollectionMethods[method];
+    if (fn === true) {
+      fn = function *(collection, request) {
+        return {
+          body: yield collection[method](request.options)
+        }
+      };
+    }
+    var request = { options: ctx.options, body: ctx.request.body };
+    var result = yield fn.call(this, ctx.backendCollection, request);
+    ctx.status = ctx.method === 'POST' ? 201 : 200;
+    ctx.body = result.body;
+  };
+
+  this.handleCustomItemMethodRequest = function *(ctx, id, method) {
+    if (ctx.method === 'POST') yield this.readBody(ctx);
+    var item = yield this._getItem(ctx, id);
+    yield this.authorizeRequest(ctx, item, method);
+    var fn = ctx.collection.customItemMethods[method];
+    if (fn === true) {
+      fn = function *(item, request) {
+        return {
+          body: yield item[method](request.options)
+        }
+      };
+    }
+    var request = { options: ctx.options, body: ctx.request.body };
+    var result = yield fn.call(this, item, request);
+    ctx.status = ctx.method === 'POST' ? 201 : 200;
+    ctx.body = result.body;
   };
 
   this.getMiddleware = function(prefix) {
