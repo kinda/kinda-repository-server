@@ -17,14 +17,16 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   this.addCollection = function(backendClass, frontendClass, options) {
     if (!options) options = {};
     var slug = _.kebabCase(frontendClass.name);
-    var collection = {
-      backendClass: backendClass,
-      frontendClass: frontendClass,
-      slug: slug,
-      authorizer: options.authorizer,
-      customCollectionMethods: options.customCollectionMethods || {},
-      customItemMethods: options.customItemMethods || {}
-    };
+    var collection = KindaObject.create();
+    collection.backendClass = backendClass;
+    collection.frontendClass = frontendClass;
+    collection.slug = slug;
+    collection.authorizer = options.authorizer;
+    collection.customCollectionMethods = options.customCollectionMethods || {};
+    collection.customItemMethods = options.customItemMethods || {};
+    _.forOwn(options.eventListeners, function(fn, event) {
+      collection.onAsync(event, fn);
+    });
     this.collections.push(collection);
   };
 
@@ -114,6 +116,15 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     if (!isAuthorized) ctx.throw(403, 'authorization failed');
   };
 
+  this.emitEvent = function *(ctx, event, request) {
+    if (!request) request = {};
+    request.backendCollection = ctx.backendCollection;
+    request.frontendCollection = ctx.frontendCollection;
+    request.event = event;
+    request.options = ctx.options;
+    yield ctx.collection.emitAsync(event, request);
+  };
+
   this._getItem = function *(ctx, id) {
     if (!id) ctx.throw(400, 'id required');
     var item = yield ctx.backendCollection.getItem(id, { errorIfMissing: false });
@@ -128,8 +139,12 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   this.handleGetItemRequest = function *(ctx, id) {
     var item = yield this._getItem(ctx, id);
     yield this.authorizeRequest(ctx, 'getItem', { backendItem: item });
-    if (item) {
-      ctx.body = ctx.frontendCollection.unserializeItem(item).serialize();
+    var frontendItem = item && ctx.frontendCollection.unserializeItem(item);
+    yield this.emitEvent(ctx, 'didGetItem', {
+      frontendItem: frontendItem, backendItem: item
+    });
+    if (frontendItem) {
+      ctx.body = frontendItem.serialize();
     } else {
       ctx.status = 204;
     }
@@ -143,9 +158,16 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       yield this.authorizeRequest(ctx, 'putItem', {
         frontendItem: frontendItem, backendItem: item
       });
+      yield this.emitEvent(ctx, 'willPutItem', {
+        frontendItem: frontendItem, backendItem: item
+      });
       yield item.save();
+      frontendItem = ctx.frontendCollection.unserializeItem(item);
+      yield this.emitEvent(ctx, 'didPutItem', {
+        frontendItem: frontendItem, backendItem: item
+      });
       ctx.status = 201;
-      ctx.body = ctx.frontendCollection.unserializeItem(item).serialize();
+      ctx.body = frontendItem.serialize();
     }.bind(this));
   };
 
@@ -158,9 +180,16 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
         frontendItem: frontendItem, backendItem: item
       });
       item.setValue(frontendItem);
+      yield this.emitEvent(ctx, 'willPutItem', {
+        frontendItem: frontendItem, backendItem: item
+      });
       yield item.save();
+      frontendItem = ctx.frontendCollection.unserializeItem(item);
+      yield this.emitEvent(ctx, 'didPutItem', {
+        frontendItem: frontendItem, backendItem: item
+      });
       ctx.status = 200;
-      ctx.body = ctx.frontendCollection.unserializeItem(item).serialize();
+      ctx.body = frontendItem.serialize();
     }.bind(this));
   };
 
@@ -168,7 +197,9 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     var item = yield this._getItem(ctx, id);
     if (item) {
       yield this.authorizeRequest(ctx, 'deleteItem', { backendItem: item });
+      yield this.emitEvent(ctx, 'willDeleteItem', { backendItem: item });
       yield item.delete();
+      yield this.emitEvent(ctx, 'didDeleteItem', { backendItem: item });
     }
     ctx.status = 204;
   };
@@ -176,16 +207,22 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   this.handleFindItemsRequest = function *(ctx) {
     yield this.authorizeRequest(ctx, 'findItems');
     var items = yield ctx.backendCollection.findItems(ctx.options);
-    items = items.map(function(item) {
-      return ctx.frontendCollection.unserializeItem(item).serialize();
+    var frontendItems = items.map(function(item) {
+      return ctx.frontendCollection.unserializeItem(item);
     }, this);
+    yield this.emitEvent(ctx, 'didFindItems', {
+      frontendItems: frontendItems, backendItems: items
+    });
     ctx.status = 200;
-    ctx.body = items;
+    ctx.body = _.invoke(frontendItems, 'serialize');
   };
 
   this.handleCountItemsRequest = function *(ctx) {
     yield this.authorizeRequest(ctx, 'countItems');
     var count = yield ctx.backendCollection.countItems(ctx.options);
+    yield this.emitEvent(ctx, 'didCountItems', {
+      count: count
+    });
     ctx.status = 200;
     ctx.body = count;
   };

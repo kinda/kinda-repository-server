@@ -104,6 +104,13 @@ suite('KindaRepositoryServer', function() {
             body: stream
           }
         }
+      },
+      eventListeners: {
+        willPutItem: function *(request) {
+          if (request.backendItem.firstName === 'Manuel') {
+            request.backendItem.firstName = 'Manu';
+          }
+        }
       }
     });
 
@@ -215,6 +222,34 @@ suite('KindaRepositoryServer', function() {
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 204);
     assert.isUndefined(res.body);
+  });
+
+  test('use event listeners', function *() {
+    var url = serverURL + '/users';
+    var body = { firstName: 'Manuel', age: 42 };
+    var params = { method: 'POST', url: url, body: body };
+    writeAuthorization(params);
+    var res = yield httpClient.request(params);
+    assert.strictEqual(res.statusCode, 201);
+    var id = res.body.id;
+    assert.ok(id);
+    assert.strictEqual(res.body.firstName, 'Manu');
+    assert.strictEqual(res.body.age, 42);
+
+    var url = serverURL + '/users/' + id;
+    var params = { method: 'GET', url: url };
+    writeAuthorization(params);
+    var res = yield httpClient.request(params);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.id, id);
+    assert.strictEqual(res.body.firstName, 'Manu');
+    assert.strictEqual(res.body.age, 42);
+
+    var url = serverURL + '/users/' + id;
+    var params = { method: 'DELETE', url: url };
+    writeAuthorization(params);
+    var res = yield httpClient.request(params);
+    assert.strictEqual(res.statusCode, 204);
   });
 
   suite('with many items', function() {
