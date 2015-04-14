@@ -3,6 +3,9 @@
 var http = require('http');
 var nodeURL = require('url');
 var querystring = require('querystring');
+var fs = require('fs');
+var nodePath = require('path');
+var os = require('os');
 require('co-mocha');
 var assert = require('chai').assert;
 var _ = require('lodash');
@@ -47,6 +50,12 @@ suite('KindaRepositoryServer', function() {
 
         this.get = function *() {
           return this.serialize();
+        };
+
+        this.generateReport = function *() {
+          var path = nodePath.join(os.tmpdir(), 'report-123456.txt');
+          fs.writeFileSync(path, 'Hello, World!');
+          return path;
         }
       });
 
@@ -82,7 +91,19 @@ suite('KindaRepositoryServer', function() {
         }
       },
       customItemMethods: {
-        get: true
+        get: true,
+        generateReport: function *(item, request) {
+          var path = yield item.generateReport();
+          var stream = fs.createReadStream(path);
+          stream.on('close', function() { fs.unlink(path); });
+          return {
+            headers: {
+              contentType: 'text/plain; charset=utf-8',
+              contentDisposition: 'inline; filename="report.txt"',
+            },
+            body: stream
+          }
+        }
       }
     });
 
@@ -271,6 +292,17 @@ suite('KindaRepositoryServer', function() {
       var res = yield httpClient.request(params);
       assert.strictEqual(res.statusCode, 201);
       assert.deepEqual(res.body, data);
+    });
+
+    test('call custom method returning a file', function *() {
+      var url = serverURL + '/users/aaa/generateReport';
+      var params = { method: 'GET', url: url };
+      writeAuthorization(params);
+      var res = yield httpClient.request(params);
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(res.headers['content-type'], 'text/plain; charset=utf-8');
+      assert.strictEqual(res.headers['content-disposition'], 'inline; filename="report.txt"');
+      assert.strictEqual(res.body, 'Hello, World!');
     });
   });
 });

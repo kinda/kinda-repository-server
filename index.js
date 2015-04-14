@@ -200,8 +200,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     }
     var request = { options: ctx.options, body: ctx.request.body };
     var result = yield fn.call(this, ctx.backendCollection, request);
-    ctx.status = ctx.method === 'POST' ? 201 : 200;
-    ctx.body = result.body;
+    this._writeCustomMethodResult(ctx, result);
   };
 
   this.handleCustomItemMethodRequest = function *(ctx, id, method) {
@@ -218,7 +217,15 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     }
     var request = { options: ctx.options, body: ctx.request.body };
     var result = yield fn.call(this, item, request);
+    this._writeCustomMethodResult(ctx, result);
+  };
+
+  this._writeCustomMethodResult = function(ctx, result) {
     ctx.status = ctx.method === 'POST' ? 201 : 200;
+    _.forOwn(result.headers, function(value, key) {
+      key = _.kebabCase(key);
+      ctx.response.set(key, value);
+    });
     ctx.body = result.body;
   };
 
