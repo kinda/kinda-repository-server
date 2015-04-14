@@ -102,15 +102,14 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     }
   };
 
-  this.authorizeRequest = function *(ctx, item, method) {
+  this.authorizeRequest = function *(ctx, method, request) {
+    if (!request) request = {};
     var authorizer = ctx.collection.authorizer || this.getAuthorizer();
     if (!authorizer) return;
-    var request = {
-      collection: ctx.backendCollection,
-      item: item,
-      method: method,
-      options: ctx.options
-    };
+    request.backendCollection = ctx.backendCollection;
+    request.frontendCollection = ctx.frontendCollection;
+    request.method = method;
+    request.options = ctx.options;
     var isAuthorized = yield authorizer(ctx.authorization, request);
     if (!isAuthorized) ctx.throw(403, 'authorization failed');
   };
@@ -128,7 +127,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
 
   this.handleGetItemRequest = function *(ctx, id) {
     var item = yield this._getItem(ctx, id);
-    yield this.authorizeRequest(ctx, item, 'getItem');
+    yield this.authorizeRequest(ctx, 'getItem', { backendItem: item });
     if (item) {
       ctx.body = ctx.frontendCollection.unserializeItem(item).serialize();
     } else {
@@ -138,10 +137,12 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
 
   this.handlePostItemRequest = function *(ctx) {
     yield this.readBody(ctx);
-    var item = ctx.frontendCollection.unserializeItem(ctx.request.body);
+    var frontendItem = ctx.frontendCollection.unserializeItem(ctx.request.body);
     yield ctx.backendCollection.transaction(function *() {
-      item = ctx.backendCollection.createItem(item);
-      yield this.authorizeRequest(ctx, item, 'putItem');
+      var item = ctx.backendCollection.createItem(frontendItem);
+      yield this.authorizeRequest(ctx, 'putItem', {
+        frontendItem: frontendItem, backendItem: item
+      });
       yield item.save();
       ctx.status = 201;
       ctx.body = ctx.frontendCollection.unserializeItem(item).serialize();
@@ -150,11 +151,13 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
 
   this.handlePutItemRequest = function *(ctx, id) {
     yield this.readBody(ctx);
-    var newItem = ctx.frontendCollection.unserializeItem(ctx.request.body);
+    var frontendItem = ctx.frontendCollection.unserializeItem(ctx.request.body);
     yield ctx.backendCollection.transaction(function *() {
       var item = yield this._getItem(ctx, id);
-      yield this.authorizeRequest(ctx, item, 'putItem');
-      item.setValue(newItem);
+      yield this.authorizeRequest(ctx, 'putItem', {
+        frontendItem: frontendItem, backendItem: item
+      });
+      item.setValue(frontendItem);
       yield item.save();
       ctx.status = 200;
       ctx.body = ctx.frontendCollection.unserializeItem(item).serialize();
@@ -164,14 +167,14 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   this.handleDeleteItemRequest = function *(ctx, id) {
     var item = yield this._getItem(ctx, id);
     if (item) {
-      yield this.authorizeRequest(ctx, item, 'deleteItem');
+      yield this.authorizeRequest(ctx, 'deleteItem', { backendItem: item });
       yield item.delete();
     }
     ctx.status = 204;
   };
 
   this.handleFindItemsRequest = function *(ctx) {
-    yield this.authorizeRequest(ctx, undefined, 'findItems');
+    yield this.authorizeRequest(ctx, 'findItems');
     var items = yield ctx.backendCollection.findItems(ctx.options);
     items = items.map(function(item) {
       return ctx.frontendCollection.unserializeItem(item).serialize();
@@ -181,7 +184,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   };
 
   this.handleCountItemsRequest = function *(ctx) {
-    yield this.authorizeRequest(ctx, undefined, 'countItems');
+    yield this.authorizeRequest(ctx, 'countItems');
     var count = yield ctx.backendCollection.countItems(ctx.options);
     ctx.status = 200;
     ctx.body = count;
@@ -189,7 +192,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
 
   this.handleCustomCollectionMethodRequest = function *(ctx, method) {
     if (ctx.method === 'POST') yield this.readBody(ctx);
-    yield this.authorizeRequest(ctx, undefined, method);
+    yield this.authorizeRequest(ctx, method);
     var fn = ctx.collection.customCollectionMethods[method];
     if (fn === true) {
       fn = function *(collection, request) {
@@ -206,7 +209,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   this.handleCustomItemMethodRequest = function *(ctx, id, method) {
     if (ctx.method === 'POST') yield this.readBody(ctx);
     var item = yield this._getItem(ctx, id);
-    yield this.authorizeRequest(ctx, item, method);
+    yield this.authorizeRequest(ctx, method, { backendItem: item });
     var fn = ctx.collection.customItemMethods[method];
     if (fn === true) {
       fn = function *(item, request) {
