@@ -234,14 +234,13 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     yield this.authorizeRequest(ctx, method);
     var fn = ctx.collection.collectionMethods[method];
     if (fn === true) {
-      fn = function *(collection, request) {
+      fn = function *(request) {
         return {
-          body: yield collection[method](request.options)
+          body: yield request.backendCollection[method](request.options)
         }
       };
     }
-    var request = { options: ctx.options, body: ctx.request.body };
-    var result = yield fn.call(this, ctx.backendCollection, request);
+    var result = yield this._callCustomMethod(ctx, fn);
     this._writeCustomMethodResult(ctx, result);
   };
 
@@ -251,15 +250,23 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     yield this.authorizeRequest(ctx, method, { backendItem: item });
     var fn = ctx.collection.itemMethods[method];
     if (fn === true) {
-      fn = function *(item, request) {
+      fn = function *(request) {
         return {
-          body: yield item[method](request.options)
+          body: yield request.backendItem[method](request.options)
         }
       };
     }
-    var request = { options: ctx.options, body: ctx.request.body };
-    var result = yield fn.call(this, item, request);
+    var result = yield this._callCustomMethod(ctx, fn, { backendItem: item });
     this._writeCustomMethodResult(ctx, result);
+  };
+
+  this._callCustomMethod = function *(ctx, fn, request) {
+    if (!request) request = {};
+    request.backendCollection = ctx.backendCollection;
+    request.frontendCollection = ctx.frontendCollection;
+    request.options = ctx.options;
+    request.body = ctx.request.body;
+    return yield fn.call(this, request);
   };
 
   this._writeCustomMethodResult = function(ctx, result) {

@@ -84,16 +84,16 @@ suite('KindaRepositoryServer', function() {
       },
       collectionMethods: {
         countRetired: true,
-        echo: function *(collection, request) {
+        echo: function *(request) {
           return {
-            body: yield collection.echo(request.body)
+            body: yield request.backendCollection.echo(request.body)
           }
         }
       },
       itemMethods: {
         get: true,
-        generateReport: function *(item, request) {
-          var path = yield item.generateReport();
+        generateReport: function *(request) {
+          var path = yield request.backendItem.generateReport();
           var stream = fs.createReadStream(path);
           stream.on('close', function() { fs.unlink(path); });
           return {
