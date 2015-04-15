@@ -79,8 +79,8 @@ suite('KindaRepositoryServer', function() {
 
     var repositoryServer = KindaRepositoryServer.create();
     repositoryServer.addCollection(Users, Users, {
-      authorizer: function *(authorization, request) {
-        return authorization === 'secret-token';
+      authorizer: function *(request) {
+        return request.authorization === 'secret-token';
       },
       collectionMethods: {
         countRetired: true,

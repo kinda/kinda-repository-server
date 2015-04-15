@@ -110,11 +110,12 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     if (!request) request = {};
     var authorizer = ctx.collection.authorizer || this.getAuthorizer();
     if (!authorizer) return;
+    request.authorization = ctx.authorization;
     request.backendCollection = ctx.backendCollection;
     request.frontendCollection = ctx.frontendCollection;
     request.method = method;
     request.options = ctx.options;
-    var isAuthorized = yield authorizer(ctx.authorization, request);
+    var isAuthorized = yield authorizer(request);
     if (!isAuthorized) ctx.throw(403, 'authorization failed');
   };
 
