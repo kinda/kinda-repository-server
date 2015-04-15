@@ -82,7 +82,7 @@ suite('KindaRepositoryServer', function() {
       authorizer: function *(authorization, request) {
         return authorization === 'secret-token';
       },
-      customCollectionMethods: {
+      collectionMethods: {
         countRetired: true,
         echo: function *(collection, request) {
           return {
@@ -90,7 +90,7 @@ suite('KindaRepositoryServer', function() {
           }
         }
       },
-      customItemMethods: {
+      itemMethods: {
         get: true,
         generateReport: function *(item, request) {
           var path = yield item.generateReport();

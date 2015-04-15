@@ -24,8 +24,8 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     collection.frontendClass = frontendClass;
     collection.slug = slug;
     collection.authorizer = options.authorizer;
-    collection.customCollectionMethods = options.customCollectionMethods || {};
-    collection.customItemMethods = options.customItemMethods || {};
+    collection.collectionMethods = options.collectionMethods || {};
+    collection.itemMethods = options.itemMethods || {};
     _.forOwn(options.eventListeners, function(fn, event) {
       collection.onAsync(event, fn);
     });
@@ -87,9 +87,9 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     var method = ctx.method;
     if (method === 'GET' && fragment1 === 'count' && !fragment2) {
       yield this.handleCountItemsRequest(ctx);
-    } else if ((method === 'GET' || method === 'POST') && (ctx.collection.customCollectionMethods.hasOwnProperty(fragment1)) && !fragment2) {
+    } else if ((method === 'GET' || method === 'POST') && (ctx.collection.collectionMethods.hasOwnProperty(fragment1)) && !fragment2) {
       yield this.handleCustomCollectionMethodRequest(ctx, fragment1);
-    } else if ((method === 'GET' || method === 'POST') && fragment1 && (ctx.collection.customItemMethods.hasOwnProperty(fragment2))) {
+    } else if ((method === 'GET' || method === 'POST') && fragment1 && (ctx.collection.itemMethods.hasOwnProperty(fragment2))) {
       yield this.handleCustomItemMethodRequest(ctx, fragment1, fragment2);
     } else if (method === 'GET' && fragment1 && !fragment2) {
       yield this.handleGetItemRequest(ctx, fragment1);
@@ -232,7 +232,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   this.handleCustomCollectionMethodRequest = function *(ctx, method) {
     if (ctx.method === 'POST') yield this.readBody(ctx);
     yield this.authorizeRequest(ctx, method);
-    var fn = ctx.collection.customCollectionMethods[method];
+    var fn = ctx.collection.collectionMethods[method];
     if (fn === true) {
       fn = function *(collection, request) {
         return {
@@ -249,7 +249,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     if (ctx.method === 'POST') yield this.readBody(ctx);
     var item = yield this._getItem(ctx, id);
     yield this.authorizeRequest(ctx, method, { backendItem: item });
-    var fn = ctx.collection.customItemMethods[method];
+    var fn = ctx.collection.itemMethods[method];
     if (fn === true) {
       fn = function *(item, request) {
         return {
