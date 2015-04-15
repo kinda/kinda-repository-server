@@ -271,6 +271,10 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   };
 
   this._writeCustomMethodResult = function(ctx, result) {
+    if (result.body == null) {
+      ctx.status = 204;
+      return;
+    }
     ctx.status = ctx.method === 'POST' ? 201 : 200;
     _.forOwn(result.headers, function(value, key) {
       key = _.kebabCase(key);
