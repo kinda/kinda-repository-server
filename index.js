@@ -6,7 +6,9 @@ var KindaObject = require('kinda-object');
 var util = require('kinda-util').create();
 
 var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function() {
-  this.setCreator(function() {
+  this.setCreator(function(options) {
+    if (!options) options = {};
+    if (options.authorizer) this.setAuthorizer(options.authorizer);
     this.collections = [];
   });
 
