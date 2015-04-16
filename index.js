@@ -182,7 +182,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       yield this.authorizeRequest(ctx, 'putItem', {
         frontendItem: frontendItem, backendItem: item
       });
-      item.setValue(frontendItem);
+      item.updateValue(frontendItem);
       yield this.emitEvent(ctx, 'willPutItem', {
         frontendItem: frontendItem, backendItem: item
       });
