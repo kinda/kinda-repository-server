@@ -101,6 +101,8 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       yield this.handleDeleteItemRequest(ctx, fragment1);
     } else if (method === 'GET' && !fragment1 && !fragment2) {
       yield this.handleFindItemsRequest(ctx);
+    } else if (method === 'DELETE' && !fragment1 && !fragment2) {
+      yield this.handleFindAndDeleteItemsRequest(ctx);
     } else {
       yield next;
     }
@@ -228,6 +230,13 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     });
     ctx.status = 200;
     ctx.body = count;
+  };
+
+  this.handleFindAndDeleteItemsRequest = function *(ctx) {
+    yield this.authorizeRequest(ctx, 'findAndDeleteItems');
+    yield ctx.backendCollection.findAndDeleteItems(ctx.options);
+    yield this.emitEvent(ctx, 'didFindAndDeleteItems');
+    ctx.status = 204;
   };
 
   this.handleCustomCollectionMethodRequest = function *(ctx, method) {

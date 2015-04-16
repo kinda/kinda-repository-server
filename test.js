@@ -301,6 +301,23 @@ suite('KindaRepositoryServer', function() {
       assert.strictEqual(res.body, 2);
     });
 
+    test('find and delete items between two existing items', function *() {
+      var options = { start: 'bbb', end: 'ccc' };
+      var query = querystring.stringify(util.encodeObject(options));
+      var url = serverURL + '/users?' + query;
+      var params = { method: 'DELETE', url: url };
+      writeAuthorization(params);
+      var res = yield httpClient.request(params);
+      assert.strictEqual(res.statusCode, 204);
+
+      var url = serverURL + '/users/count';
+      var params = { method: 'GET', url: url };
+      writeAuthorization(params);
+      var res = yield httpClient.request(params);
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(res.body, 3);
+    });
+
     test('call custom method on a collection', function *() {
       var url = serverURL + '/users/countRetired';
       var params = { method: 'GET', url: url };
