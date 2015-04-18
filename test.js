@@ -77,9 +77,23 @@ suite('KindaRepositoryServer', function() {
 
     users = Users.create();
 
-    var repositoryServer = KindaRepositoryServer.create();
+    var repositoryServer = KindaRepositoryServer.create({
+      signInWithCredentialsHandler: function *(credentials) {
+        if (!credentials) return;
+        if (credentials.username !== 'mvila@3base.com') return;
+        if (credentials.password !== 'password') return;
+        return 'secret-token';
+      },
+      signInWithAuthorizationHandler: function *(authorization) {
+        return authorization === 'secret-token';
+      },
+      signOutHandler: function *(authorization) {
+        // delete authorization token
+      }
+    });
+
     repositoryServer.addCollection(Users, Users, {
-      authorizer: function *(request) {
+      authorizeHandler: function *(request) {
         return request.authorization === 'secret-token';
       },
       collectionMethods: {
@@ -126,19 +140,51 @@ suite('KindaRepositoryServer', function() {
     yield users.getRepository().database.destroyDatabase();
   });
 
-  var writeAuthorization = function(params) {
-    var authorization = 'secret-token';
+  var writeAuthorization = function(params, authorization) {
     var parsedURL = nodeURL.parse(params.url, true);
     _.assign(parsedURL.query, { authorization: authorization });
     delete parsedURL.search;
     params.url = nodeURL.format(parsedURL);
   };
 
+  test('test authorization', function *() {
+    var url = serverURL + '/users';
+    var body = { firstName: 'Manu', age: 42 };
+    var params = { method: 'POST', url: url, body: body };
+    var res = yield httpClient.request(params);
+    assert.strictEqual(res.statusCode, 403);
+
+    var url = serverURL + '/authorizations';
+    var credentials = { username: 'mvila@3base.com', password: 'wrongpass' };
+    var params = { method: 'POST', url: url, body: credentials };
+    var res = yield httpClient.request(params);
+    assert.strictEqual(res.statusCode, 403);
+
+    var url = serverURL + '/authorizations';
+    var credentials = { username: 'mvila@3base.com', password: 'password' };
+    var params = { method: 'POST', url: url, body: credentials };
+    var res = yield httpClient.request(params);
+    assert.strictEqual(res.statusCode, 201);
+    assert.strictEqual(res.body, 'secret-token');
+
+    var url = serverURL + '/authorizations/wrong-token';
+    var res = yield httpClient.get(url);
+    assert.strictEqual(res.statusCode, 403);
+
+    var url = serverURL + '/authorizations/secret-token';
+    var res = yield httpClient.get(url);
+    assert.strictEqual(res.statusCode, 204);
+
+    var url = serverURL + '/authorizations/secret-token';
+    var res = yield httpClient.del(url);
+    assert.strictEqual(res.statusCode, 204);
+  });
+
   test('put, get and delete an item', function *() {
     var url = serverURL + '/users';
     var body = { firstName: 'Manu', age: 42 };
     var params = { method: 'POST', url: url, body: body };
-    writeAuthorization(params);
+    writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 201);
     var id = res.body.id;
@@ -148,7 +194,7 @@ suite('KindaRepositoryServer', function() {
 
     var url = serverURL + '/users/' + id;
     var params = { method: 'GET', url: url };
-    writeAuthorization(params);
+    writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.body.id, id);
@@ -158,7 +204,7 @@ suite('KindaRepositoryServer', function() {
     var url = serverURL + '/users/' + id;
     var body = { id: id, firstName: 'Manu', age: 43 };
     var params = { method: 'PUT', url: url, body: body };
-    writeAuthorization(params);
+    writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.body.id, id);
@@ -167,7 +213,7 @@ suite('KindaRepositoryServer', function() {
 
     var url = serverURL + '/users/' + id;
     var params = { method: 'GET', url: url };
-    writeAuthorization(params);
+    writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.body.id, id);
@@ -176,7 +222,7 @@ suite('KindaRepositoryServer', function() {
 
     var url = serverURL + '/users/' + id;
     var params = { method: 'DELETE', url: url };
-    writeAuthorization(params);
+    writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 204);
 
@@ -184,7 +230,7 @@ suite('KindaRepositoryServer', function() {
     var query = querystring.stringify(util.encodeObject(options));
     var url = serverURL + '/users/' + id + '?' + query;
     var params = { method: 'GET', url: url };
-    writeAuthorization(params);
+    writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 204);
     assert.isUndefined(res.body);
@@ -193,7 +239,7 @@ suite('KindaRepositoryServer', function() {
   test('get a missing item', function *() {
     var url = serverURL + '/users/xyz';
     var params = { method: 'GET', url: url };
-    writeAuthorization(params);
+    writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 404);
 
@@ -201,7 +247,7 @@ suite('KindaRepositoryServer', function() {
     var query = querystring.stringify(util.encodeObject(options));
     var url = serverURL + '/users/xyz?' + query;
     var params = { method: 'GET', url: url };
-    writeAuthorization(params);
+    writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 204);
     assert.isUndefined(res.body);
@@ -210,7 +256,7 @@ suite('KindaRepositoryServer', function() {
   test('delete a missing item', function *() {
     var url = serverURL + '/users/xyz';
     var params = { method: 'DELETE', url: url };
-    writeAuthorization(params);
+    writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 404);
 
@@ -218,7 +264,7 @@ suite('KindaRepositoryServer', function() {
     var query = querystring.stringify(util.encodeObject(options));
     var url = serverURL + '/users/xyz?' + query;
     var params = { method: 'DELETE', url: url };
-    writeAuthorization(params);
+    writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 204);
     assert.isUndefined(res.body);
@@ -228,7 +274,7 @@ suite('KindaRepositoryServer', function() {
     var url = serverURL + '/users';
     var body = { firstName: 'Manuel', age: 42 };
     var params = { method: 'POST', url: url, body: body };
-    writeAuthorization(params);
+    writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 201);
     var id = res.body.id;
@@ -238,7 +284,7 @@ suite('KindaRepositoryServer', function() {
 
     var url = serverURL + '/users/' + id;
     var params = { method: 'GET', url: url };
-    writeAuthorization(params);
+    writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.body.id, id);
@@ -247,7 +293,7 @@ suite('KindaRepositoryServer', function() {
 
     var url = serverURL + '/users/' + id;
     var params = { method: 'DELETE', url: url };
-    writeAuthorization(params);
+    writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 204);
   });
@@ -274,7 +320,7 @@ suite('KindaRepositoryServer', function() {
       var query = querystring.stringify(util.encodeObject(options));
       var url = serverURL + '/users?' + query;
       var params = { method: 'GET', url: url };
-      writeAuthorization(params);
+      writeAuthorization(params, 'secret-token');
       var res = yield httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.deepEqual(res.body, [
@@ -286,7 +332,7 @@ suite('KindaRepositoryServer', function() {
     test('count items', function *() {
       var url = serverURL + '/users/count';
       var params = { method: 'GET', url: url };
-      writeAuthorization(params);
+      writeAuthorization(params, 'secret-token');
       var res = yield httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.body, 5);
@@ -295,7 +341,7 @@ suite('KindaRepositoryServer', function() {
       var query = querystring.stringify(util.encodeObject(options));
       var url = serverURL + '/users/count?' + query;
       var params = { method: 'GET', url: url };
-      writeAuthorization(params);
+      writeAuthorization(params, 'secret-token');
       var res = yield httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.body, 2);
@@ -306,13 +352,13 @@ suite('KindaRepositoryServer', function() {
       var query = querystring.stringify(util.encodeObject(options));
       var url = serverURL + '/users?' + query;
       var params = { method: 'DELETE', url: url };
-      writeAuthorization(params);
+      writeAuthorization(params, 'secret-token');
       var res = yield httpClient.request(params);
       assert.strictEqual(res.statusCode, 204);
 
       var url = serverURL + '/users/count';
       var params = { method: 'GET', url: url };
-      writeAuthorization(params);
+      writeAuthorization(params, 'secret-token');
       var res = yield httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.body, 3);
@@ -321,7 +367,7 @@ suite('KindaRepositoryServer', function() {
     test('call custom method on a collection', function *() {
       var url = serverURL + '/users/countRetired';
       var params = { method: 'GET', url: url };
-      writeAuthorization(params);
+      writeAuthorization(params, 'secret-token');
       var res = yield httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.body, 1);
@@ -330,7 +376,7 @@ suite('KindaRepositoryServer', function() {
     test('call custom method on an item', function *() {
       var url = serverURL + '/users/aaa/get';
       var params = { method: 'GET', url: url };
-      writeAuthorization(params);
+      writeAuthorization(params, 'secret-token');
       var res = yield httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.deepEqual(res.body, { id: 'aaa', firstName: 'Bob', age: 20 });
@@ -340,7 +386,7 @@ suite('KindaRepositoryServer', function() {
       var data = [{ id: 'aaa', firstName: 'Bob', age: 20 }];
       var url = serverURL + '/users/echo';
       var params = { method: 'POST', url: url, body: data };
-      writeAuthorization(params);
+      writeAuthorization(params, 'secret-token');
       var res = yield httpClient.request(params);
       assert.strictEqual(res.statusCode, 201);
       assert.deepEqual(res.body, data);
@@ -349,7 +395,7 @@ suite('KindaRepositoryServer', function() {
     test('call custom method returning a file', function *() {
       var url = serverURL + '/users/aaa/generateReport';
       var params = { method: 'GET', url: url };
-      writeAuthorization(params);
+      writeAuthorization(params, 'secret-token');
       var res = yield httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.headers['content-type'], 'text/plain; charset=utf-8');

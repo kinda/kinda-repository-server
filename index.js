@@ -6,9 +6,33 @@ var KindaObject = require('kinda-object');
 var util = require('kinda-util').create();
 
 var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function() {
+  // Options:
+  //   signInWithCredentialsHandler:
+  //     function *(credentials) {
+  //       if (!credentials) return;
+  //       if (credentials.username !== 'user@domain.com') return;
+  //       if (credentials.password !== 'password') return;
+  //       return 'secret-token';
+  //     }
+  //   signInWithAuthorizationHandler:
+  //     function *(authorization) {
+  //       return authorization === 'secret-token';
+  //     },
+  //   signOutHandler:
+  //     function *(authorization) {
+  //       // delete authorization token...
+  //     },
+  //   authorizeHandler:
+  //     function *(request) {
+  //       return request.authorization === 'secret-token';
+  //     }
   this.setCreator(function(options) {
-    if (!options) options = {};
-    if (options.authorizer) this.setAuthorizer(options.authorizer);
+    _.assign(this, _.pick(options, [
+      'signInWithCredentialsHandler',
+      'signInWithAuthorizationHandler',
+      'signOutHandler',
+      'authorizeHandler'
+    ]));
     this.collections = [];
   });
 
@@ -23,25 +47,13 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     collection.backendClass = backendClass;
     collection.frontendClass = frontendClass;
     collection.slug = slug;
-    collection.authorizer = options.authorizer;
+    collection.authorizeHandler = options.authorizeHandler;
     collection.collectionMethods = options.collectionMethods || {};
     collection.itemMethods = options.itemMethods || {};
     _.forOwn(options.eventListeners, function(fn, event) {
       collection.onAsync(event, fn);
     });
     this.collections.push(collection);
-  };
-
-  this.getAuthorizer = function() {
-    return this._authorizer;
-  };
-
-  // Example of authorizer:
-  // function *(authorization, { collection, item, method, options }) {
-  //   return authorization === 'secret-token';
-  // }
-  this.setAuthorizer = function(authorizer) {
-    this._authorizer = authorizer;
   };
 
   this.handleRequest = function *(ctx, path, next) {
@@ -54,28 +66,83 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     } else {
       path = '';
     }
+    if (slug === 'authorizations') {
+      yield this.handleAuthorizationRequest(ctx, path, next);
+      return;
+    }
     var collection = _.find(this.collections, 'slug', slug);
-    if (!collection) return yield next;
-    this.readAuthorization(ctx);
-    ctx.options = util.decodeObject(ctx.query);
-    ctx.collection = collection;
-    ctx.backendCollection = collection.backendClass.create();
-    ctx.backendCollection.context = this;
-    ctx.frontendCollection = collection.frontendClass.create();
-    ctx.frontendCollection.context = this;
-    yield this.handleCollectionRequest(ctx, path, next);
-  };
-
-  this.readAuthorization = function(ctx) {
-    var query = util.decodeObject(ctx.query);
-    ctx.authorization = this.authorizationUnserializer({ query: query });
+    if (collection) {
+      yield this.handleCollectionRequest(ctx, collection, path, next);
+      return;
+    }
+    yield next;
   };
 
   this.readBody = function *(ctx) {
     ctx.request.body = yield parseBody.json(ctx, { limit: '8mb' });
   };
 
-  this.handleCollectionRequest = function *(ctx, path, next) {
+  // === Authorization requests ===
+
+  this.handleAuthorizationRequest = function *(ctx, path, next) {
+    var fragment = path;
+    if (_.startsWith(fragment, '/')) fragment = fragment.slice(1);
+    var index = fragment.indexOf('/');
+    if (index !== -1) {
+      path = fragment.slice(index + 1);
+      fragment = fragment.slice(0, index);
+    } else {
+      path = '';
+    }
+    var method = ctx.method;
+    if (method === 'POST' && !fragment && !path) {
+      yield this.handleSignInWithCredentialsRequest(ctx);
+    } else if (method === 'GET' && fragment && !path) {
+      yield this.handleSignInWithAuthorizationRequest(ctx, fragment);
+    } else if (method === 'DELETE' && fragment && !path) {
+      yield this.handleSignOutRequest(ctx, fragment);
+    } else {
+      yield next;
+    }
+  };
+
+  this.handleSignInWithCredentialsRequest = function *(ctx) {
+    yield this.readBody(ctx);
+    var handler = this.signInWithCredentialsHandler;
+    if (!handler) throw new Error('signInWithCredentialsHandler is undefined');
+    var authorization = yield handler(ctx.request.body);
+    if (!authorization) ctx.throw(403, 'sign in with credentials failed');
+    ctx.status = 201;
+    ctx.body = authorization;
+  };
+
+  this.handleSignInWithAuthorizationRequest = function *(ctx, authorization) {
+    var handler = this.signInWithAuthorizationHandler;
+    if (!handler) throw new Error('signInWithAuthorizationHandler is undefined');
+    var isOkay = yield handler(authorization);
+    if (!isOkay) ctx.throw(403, 'sign in with authorization failed');
+    ctx.status = 204;
+  };
+
+  this.handleSignOutRequest = function *(ctx, authorization) {
+    var handler = this.signOutHandler;
+    if (!handler) throw new Error('signOutHandler is undefined');
+    yield handler(authorization);
+    ctx.status = 204;
+  };
+
+  // === Collection requests ===
+
+  this.handleCollectionRequest = function *(ctx, collection, path, next) {
+    ctx.collection = collection;
+    ctx.backendCollection = collection.backendClass.create();
+    ctx.backendCollection.context = this;
+    ctx.frontendCollection = collection.frontendClass.create();
+    ctx.frontendCollection.context = this;
+    ctx.options = util.decodeObject(ctx.query);
+
+    this.readAuthorization(ctx);
+
     var fragment1 = path;
     var fragment2 = '';
     if (_.startsWith(fragment1, '/')) fragment1 = fragment1.slice(1);
@@ -84,6 +151,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       fragment2 = fragment1.slice(index + 1);
       fragment1 = fragment1.slice(0, index);
     }
+
     var method = ctx.method;
     if (method === 'GET' && fragment1 === 'count' && !fragment2) {
       yield this.handleCountItemsRequest(ctx);
@@ -108,16 +176,21 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     }
   };
 
+  this.readAuthorization = function(ctx) {
+    var query = util.decodeObject(ctx.query);
+    ctx.authorization = this.authorizationUnserializer({ query: query });
+  };
+
   this.authorizeRequest = function *(ctx, method, request) {
     if (!request) request = {};
-    var authorizer = ctx.collection.authorizer || this.getAuthorizer();
-    if (!authorizer) return;
+    var handler = ctx.collection.authorizeHandler || this.authorizeHandler;
+    if (!handler) return;
     request.authorization = ctx.authorization;
     request.backendCollection = ctx.backendCollection;
     request.frontendCollection = ctx.frontendCollection;
     request.method = method;
     request.options = ctx.options;
-    var isAuthorized = yield authorizer(request);
+    var isAuthorized = yield handler(request);
     if (!isAuthorized) ctx.throw(403, 'authorization failed');
   };
 
