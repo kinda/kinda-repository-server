@@ -42,7 +42,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
 
   this.addCollection = function(backendClass, frontendClass, options) {
     if (!options) options = {};
-    var slug = _.kebabCase(frontendClass.name);
+    var slug = _.kebabCase(frontendClass.getName());
     var collection = KindaObject.create();
     collection.backendClass = backendClass;
     collection.frontendClass = frontendClass;
