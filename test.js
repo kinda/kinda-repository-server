@@ -11,8 +11,7 @@ var assert = require('chai').assert;
 var _ = require('lodash');
 var koa = require('koa');
 var Collection = require('kinda-collection');
-var KindaDB = require('kinda-db');
-var KindaDBRepository = require('kinda-db-repository');
+var KindaLocalRepository = require('kinda-local-repository');
 var httpClient = require('kinda-http-client').create();
 var util = require('kinda-util').create();
 var KindaRepositoryServer = require('./');
@@ -33,14 +32,6 @@ suite('KindaRepositoryServer', function() {
   suiteSetup(function *() {
     var serverPort = 8888;
     var serverPrefix = '/v1';
-
-    var db = KindaDB.create('Test', 'mysql://test@localhost/test');
-    db.registerMigration(1, function *() {
-      yield this.addTable('Users');
-    });
-    yield db.initializeDatabase();
-
-    var repository = KindaDBRepository.create(db);
 
     var Users = Collection.extend('Users', function() {
       this.Item = this.Item.extend('User', function() {
@@ -71,13 +62,13 @@ suite('KindaRepositoryServer', function() {
       this.echo = function *(data) {
         return data;
       };
-
-      this.setRepository(repository);
     });
 
-    users = Users.create();
+    var repository = KindaLocalRepository.create(
+      'Test', 'mysql://test@localhost/test', [Users]
+    );
 
-    var repositoryServer = KindaRepositoryServer.create({
+    var repositoryServer = KindaRepositoryServer.create(repository, repository, {
       signInWithCredentialsHandler: function *(credentials) {
         if (!credentials) return;
         if (credentials.username !== 'mvila@3base.com') return;
@@ -89,40 +80,41 @@ suite('KindaRepositoryServer', function() {
       },
       signOutHandler: function *(authorization) {
         // delete authorization token
-      }
-    });
-
-    repositoryServer.addCollection(Users, Users, {
-      authorizeHandler: function *(request) {
-        return request.authorization === 'secret-token';
       },
-      collectionMethods: {
-        countRetired: true,
-        echo: function *(request) {
-          return {
-            body: yield request.backendCollection.echo(request.body)
-          }
-        }
-      },
-      itemMethods: {
-        get: true,
-        generateReport: function *(request) {
-          var path = yield request.backendItem.generateReport();
-          var stream = fs.createReadStream(path);
-          stream.on('close', function() { fs.unlink(path); });
-          return {
-            headers: {
-              contentType: 'text/plain; charset=utf-8',
-              contentDisposition: 'inline; filename="report.txt"',
-            },
-            body: stream
-          }
-        }
-      },
-      eventListeners: {
-        willPutItem: function *(request) {
-          if (request.backendItem.firstName === 'Manuel') {
-            request.backendItem.firstName = 'Manu';
+      collections: {
+        Users: {
+          authorizeHandler: function *(request) {
+            return request.authorization === 'secret-token';
+          },
+          collectionMethods: {
+            countRetired: true,
+            echo: function *(request) {
+              return {
+                body: yield request.localCollection.echo(request.body)
+              }
+            }
+          },
+          itemMethods: {
+            get: true,
+            generateReport: function *(request) {
+              var path = yield request.localItem.generateReport();
+              var stream = fs.createReadStream(path);
+              stream.on('close', function() { fs.unlink(path); });
+              return {
+                headers: {
+                  contentType: 'text/plain; charset=utf-8',
+                  contentDisposition: 'inline; filename="report.txt"',
+                },
+                body: stream
+              }
+            }
+          },
+          eventListeners: {
+            willPutItem: function *(request) {
+              if (request.localItem.firstName === 'Manuel') {
+                request.localItem.firstName = 'Manu';
+              }
+            }
           }
         }
       }
@@ -133,6 +125,8 @@ suite('KindaRepositoryServer', function() {
     httpServer = http.createServer(server.callback());
     httpServer.listen(serverPort);
     serverURL = 'http://localhost:' + serverPort + serverPrefix;
+
+    users = repository.createCollection('Users');
   });
 
   suiteTeardown(function *() {
