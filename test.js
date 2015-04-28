@@ -90,14 +90,14 @@ suite('KindaRepositoryServer', function() {
             countRetired: true,
             echo: function *(request) {
               return {
-                body: yield request.localCollection.echo(request.body)
+                body: yield request.collection.echo(request.body)
               }
             }
           },
           itemMethods: {
             get: true,
             generateReport: function *(request) {
-              var path = yield request.localItem.generateReport();
+              var path = yield request.item.generateReport();
               var stream = fs.createReadStream(path);
               stream.on('close', function() { fs.unlink(path); });
               return {
@@ -111,8 +111,8 @@ suite('KindaRepositoryServer', function() {
           },
           eventListeners: {
             willPutItem: function *(request) {
-              if (request.localItem.firstName === 'Manuel') {
-                request.localItem.firstName = 'Manu';
+              if (request.item.firstName === 'Manuel') {
+                request.item.firstName = 'Manu';
               }
             }
           }

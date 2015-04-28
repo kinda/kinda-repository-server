@@ -26,27 +26,27 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   //     function *(request) {
   //       return request.authorization === 'secret-token';
   //     }
-  this.setCreator(function(localRepository, remoteRepository, options) {
+  this.setCreator(function(repository, clientRepository, options) {
     if (!options) options = {};
-    this.localRepository = localRepository;
-    this.remoteRepository = remoteRepository;
+    this.repository = repository;
+    this.clientRepository = clientRepository;
     _.assign(this, _.pick(options, [
       'signInWithCredentialsHandler',
       'signInWithAuthorizationHandler',
       'signOutHandler',
       'authorizeHandler'
     ]));
-    this.collections = {};
+    this.registeredCollections = {};
     var collectionOptions = options.collections || {};
-    _.forOwn(remoteRepository.collectionClasses, function(klass, name) {
-      if (!localRepository.collectionClasses[name]) {
-        throw new Error('collection \'' + name + '\' is undefined in the local repository');
+    _.forOwn(clientRepository.collectionClasses, function(klass, name) {
+      if (!repository.collectionClasses[name]) {
+        throw new Error('collection \'' + name + '\' is undefined in the server repository');
       }
-      this._addCollection(name, collectionOptions[name]);
+      this.registerCollection(name, collectionOptions[name]);
     }, this);
   });
 
-  this._addCollection = function(name, options) {
+  this.registerCollection = function(name, options) {
     if (!options) options = {};
     var slug = _.kebabCase(name);
     var collection = KindaObject.create();
@@ -58,7 +58,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     _.forOwn(options.eventListeners, function(fn, event) {
       collection.onAsync(event, fn);
     });
-    this.collections[slug] = collection;
+    this.registeredCollections[slug] = collection;
   };
 
   this.handleRequest = function *(ctx, path, next) {
@@ -75,9 +75,9 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       yield this.handleAuthorizationRequest(ctx, path, next);
       return;
     }
-    var collection = this.collections[slug];
-    if (collection) {
-      yield this.handleCollectionRequest(ctx, collection, path, next);
+    var registeredCollection = this.registeredCollections[slug];
+    if (registeredCollection) {
+      yield this.handleCollectionRequest(ctx, registeredCollection, path, next);
       return;
     }
     yield next;
@@ -138,12 +138,13 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
 
   // === Collection requests ===
 
-  this.handleCollectionRequest = function *(ctx, collection, path, next) {
-    ctx.collection = collection;
-    ctx.localCollection = this.localRepository.createCollection(collection.name);
-    ctx.localCollection.context = this;
-    ctx.remoteCollection = this.remoteRepository.createCollection(collection.name);
-    ctx.remoteCollection.context = this;
+  this.handleCollectionRequest = function *(ctx, registeredCollection, path, next) {
+    var name = registeredCollection.name;
+    ctx.registeredCollection = registeredCollection;
+    ctx.collection = this.repository.createCollection(name);
+    ctx.collection.context = this;
+    ctx.clientCollection = this.clientRepository.createCollection(name);
+    ctx.clientCollection.context = this;
     ctx.options = util.decodeObject(ctx.query);
 
     this.readAuthorization(ctx);
@@ -160,9 +161,9 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     var method = ctx.method;
     if (method === 'GET' && fragment1 === 'count' && !fragment2) {
       yield this.handleCountItemsRequest(ctx);
-    } else if ((method === 'GET' || method === 'POST') && (ctx.collection.collectionMethods.hasOwnProperty(fragment1)) && !fragment2) {
+    } else if ((method === 'GET' || method === 'POST') && (ctx.registeredCollection.collectionMethods.hasOwnProperty(fragment1)) && !fragment2) {
       yield this.handleCustomCollectionMethodRequest(ctx, fragment1);
-    } else if ((method === 'GET' || method === 'POST') && fragment1 && (ctx.collection.itemMethods.hasOwnProperty(fragment2))) {
+    } else if ((method === 'GET' || method === 'POST') && fragment1 && (ctx.registeredCollection.itemMethods.hasOwnProperty(fragment2))) {
       yield this.handleCustomItemMethodRequest(ctx, fragment1, fragment2);
     } else if (method === 'GET' && fragment1 && !fragment2) {
       yield this.handleGetItemRequest(ctx, fragment1);
@@ -192,11 +193,11 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
 
   this.authorizeRequest = function *(ctx, method, request) {
     if (!request) request = {};
-    var handler = ctx.collection.authorizeHandler || this.authorizeHandler;
+    var handler = ctx.registeredCollection.authorizeHandler || this.authorizeHandler;
     if (!handler) return;
     request.authorization = ctx.authorization;
-    request.localCollection = ctx.localCollection;
-    request.remoteCollection = ctx.remoteCollection;
+    request.collection = ctx.collection;
+    request.clientCollection = ctx.clientCollection;
     request.method = method;
     request.options = ctx.options;
     var isAuthorized = yield handler(request);
@@ -205,16 +206,16 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
 
   this.emitEvent = function *(ctx, event, request) {
     if (!request) request = {};
-    request.localCollection = ctx.localCollection;
-    request.remoteCollection = ctx.remoteCollection;
+    request.collection = ctx.collection;
+    request.clientCollection = ctx.clientCollection;
     request.event = event;
     request.options = ctx.options;
-    yield ctx.collection.emitAsync(event, request);
+    yield ctx.registeredCollection.emitAsync(event, request);
   };
 
   this._getItem = function *(ctx, id) {
     if (!id) ctx.throw(400, 'id required');
-    var item = yield ctx.localCollection.getItem(id, { errorIfMissing: false });
+    var item = yield ctx.collection.getItem(id, { errorIfMissing: false });
     if (!item) {
       var errorIfMissing = ctx.options.errorIfMissing;
       if (errorIfMissing == null) errorIfMissing = true;
@@ -225,13 +226,13 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
 
   this.handleGetItemRequest = function *(ctx, id) {
     var item = yield this._getItem(ctx, id);
-    yield this.authorizeRequest(ctx, 'getItem', { localItem: item });
-    var remoteItem = item && ctx.remoteCollection.unserializeItem(item);
+    yield this.authorizeRequest(ctx, 'getItem', { item: item });
+    var clientItem = item && ctx.clientCollection.unserializeItem(item);
     yield this.emitEvent(ctx, 'didGetItem', {
-      remoteItem: remoteItem, localItem: item
+      clientItem: clientItem, item: item
     });
-    if (remoteItem) {
-      ctx.body = remoteItem.serialize();
+    if (clientItem) {
+      ctx.body = clientItem.serialize();
     } else {
       ctx.status = 204;
     }
@@ -239,74 +240,74 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
 
   this.handlePostItemRequest = function *(ctx) {
     yield this.readBody(ctx);
-    var remoteItem = ctx.remoteCollection.unserializeItem(ctx.request.body);
-    yield ctx.localCollection.transaction(function *() {
-      var item = ctx.localCollection.createItem(remoteItem);
+    var clientItem = ctx.clientCollection.unserializeItem(ctx.request.body);
+    yield ctx.collection.transaction(function *() {
+      var item = ctx.collection.createItem(clientItem);
       yield this.authorizeRequest(ctx, 'putItem', {
-        remoteItem: remoteItem, localItem: item
+        clientItem: clientItem, item: item
       });
       yield this.emitEvent(ctx, 'willPutItem', {
-        remoteItem: remoteItem, localItem: item
+        clientItem: clientItem, item: item
       });
       yield item.save();
-      remoteItem = ctx.remoteCollection.unserializeItem(item);
+      clientItem = ctx.clientCollection.unserializeItem(item);
       yield this.emitEvent(ctx, 'didPutItem', {
-        remoteItem: remoteItem, localItem: item
+        clientItem: clientItem, item: item
       });
       ctx.status = 201;
-      ctx.body = remoteItem.serialize();
+      ctx.body = clientItem.serialize();
     }.bind(this));
   };
 
   this.handlePutItemRequest = function *(ctx, id) {
     yield this.readBody(ctx);
-    var remoteItem = ctx.remoteCollection.unserializeItem(ctx.request.body);
-    yield ctx.localCollection.transaction(function *() {
+    var clientItem = ctx.clientCollection.unserializeItem(ctx.request.body);
+    yield ctx.collection.transaction(function *() {
       var item = yield this._getItem(ctx, id);
       yield this.authorizeRequest(ctx, 'putItem', {
-        remoteItem: remoteItem, localItem: item
+        clientItem: clientItem, item: item
       });
-      item.updateValue(remoteItem);
+      item.updateValue(clientItem);
       yield this.emitEvent(ctx, 'willPutItem', {
-        remoteItem: remoteItem, localItem: item
+        clientItem: clientItem, item: item
       });
       yield item.save();
-      remoteItem = ctx.remoteCollection.unserializeItem(item);
+      clientItem = ctx.clientCollection.unserializeItem(item);
       yield this.emitEvent(ctx, 'didPutItem', {
-        remoteItem: remoteItem, localItem: item
+        clientItem: clientItem, item: item
       });
       ctx.status = 200;
-      ctx.body = remoteItem.serialize();
+      ctx.body = clientItem.serialize();
     }.bind(this));
   };
 
   this.handleDeleteItemRequest = function *(ctx, id) {
     var item = yield this._getItem(ctx, id);
     if (item) {
-      yield this.authorizeRequest(ctx, 'deleteItem', { localItem: item });
-      yield this.emitEvent(ctx, 'willDeleteItem', { localItem: item });
+      yield this.authorizeRequest(ctx, 'deleteItem', { item: item });
+      yield this.emitEvent(ctx, 'willDeleteItem', { item: item });
       yield item.delete();
-      yield this.emitEvent(ctx, 'didDeleteItem', { localItem: item });
+      yield this.emitEvent(ctx, 'didDeleteItem', { item: item });
     }
     ctx.status = 204;
   };
 
   this.handleFindItemsRequest = function *(ctx) {
     yield this.authorizeRequest(ctx, 'findItems');
-    var items = yield ctx.localCollection.findItems(ctx.options);
-    var remoteItems = items.map(function(item) {
-      return ctx.remoteCollection.unserializeItem(item);
+    var items = yield ctx.collection.findItems(ctx.options);
+    var clientItems = items.map(function(item) {
+      return ctx.clientCollection.unserializeItem(item);
     }, this);
     yield this.emitEvent(ctx, 'didFindItems', {
-      remoteItems: remoteItems, localItems: items
+      clientItems: clientItems, items: items
     });
     ctx.status = 200;
-    ctx.body = _.invoke(remoteItems, 'serialize');
+    ctx.body = _.invoke(clientItems, 'serialize');
   };
 
   this.handleCountItemsRequest = function *(ctx) {
     yield this.authorizeRequest(ctx, 'countItems');
-    var count = yield ctx.localCollection.countItems(ctx.options);
+    var count = yield ctx.collection.countItems(ctx.options);
     yield this.emitEvent(ctx, 'didCountItems', {
       count: count
     });
@@ -316,7 +317,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
 
   this.handleFindAndDeleteItemsRequest = function *(ctx) {
     yield this.authorizeRequest(ctx, 'findAndDeleteItems');
-    yield ctx.localCollection.findAndDeleteItems(ctx.options);
+    yield ctx.collection.findAndDeleteItems(ctx.options);
     yield this.emitEvent(ctx, 'didFindAndDeleteItems');
     ctx.status = 204;
   };
@@ -324,11 +325,11 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   this.handleCustomCollectionMethodRequest = function *(ctx, method) {
     if (ctx.method === 'POST') yield this.readBody(ctx);
     yield this.authorizeRequest(ctx, method);
-    var fn = ctx.collection.collectionMethods[method];
+    var fn = ctx.registeredCollection.collectionMethods[method];
     if (fn === true) {
       fn = function *(request) {
         return {
-          body: yield request.localCollection[method](request.options)
+          body: yield request.collection[method](request.options)
         }
       };
     }
@@ -339,23 +340,23 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   this.handleCustomItemMethodRequest = function *(ctx, id, method) {
     if (ctx.method === 'POST') yield this.readBody(ctx);
     var item = yield this._getItem(ctx, id);
-    yield this.authorizeRequest(ctx, method, { localItem: item });
-    var fn = ctx.collection.itemMethods[method];
+    yield this.authorizeRequest(ctx, method, { item: item });
+    var fn = ctx.registeredCollection.itemMethods[method];
     if (fn === true) {
       fn = function *(request) {
         return {
-          body: yield request.localItem[method](request.options)
+          body: yield request.item[method](request.options)
         }
       };
     }
-    var result = yield this._callCustomMethod(ctx, fn, { localItem: item });
+    var result = yield this._callCustomMethod(ctx, fn, { item: item });
     this._writeCustomMethodResult(ctx, result);
   };
 
   this._callCustomMethod = function *(ctx, fn, request) {
     if (!request) request = {};
-    request.localCollection = ctx.localCollection;
-    request.remoteCollection = ctx.remoteCollection;
+    request.collection = ctx.collection;
+    request.clientCollection = ctx.clientCollection;
     request.options = ctx.options;
     request.body = ctx.request.body;
     return yield fn.call(this, request);
