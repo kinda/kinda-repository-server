@@ -157,14 +157,16 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       fragment2 = fragment1.slice(index + 1);
       fragment1 = fragment1.slice(0, index);
     }
+    var camelCasedFragment1 = _.camelCase(fragment1);
+    var camelCasedFragment2 = _.camelCase(fragment2);
 
     var method = ctx.method;
     if (method === 'GET' && fragment1 === 'count' && !fragment2) {
       yield this.handleCountItemsRequest(ctx);
-    } else if ((method === 'GET' || method === 'POST') && (ctx.registeredCollection.collectionMethods.hasOwnProperty(fragment1)) && !fragment2) {
-      yield this.handleCustomCollectionMethodRequest(ctx, fragment1);
-    } else if ((method === 'GET' || method === 'POST') && fragment1 && (ctx.registeredCollection.itemMethods.hasOwnProperty(fragment2))) {
-      yield this.handleCustomItemMethodRequest(ctx, fragment1, fragment2);
+    } else if ((method === 'GET' || method === 'POST') && (ctx.registeredCollection.collectionMethods.hasOwnProperty(camelCasedFragment1)) && !fragment2) {
+      yield this.handleCustomCollectionMethodRequest(ctx, camelCasedFragment1);
+    } else if ((method === 'GET' || method === 'POST') && fragment1 && (ctx.registeredCollection.itemMethods.hasOwnProperty(camelCasedFragment2))) {
+      yield this.handleCustomItemMethodRequest(ctx, fragment1, camelCasedFragment2);
     } else if (method === 'GET' && fragment1 && !fragment2) {
       yield this.handleGetItemRequest(ctx, fragment1);
     } else if (method === 'POST' && !fragment1 && !fragment2) {

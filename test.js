@@ -359,7 +359,7 @@ suite('KindaRepositoryServer', function() {
     });
 
     test('call custom method on a collection', function *() {
-      var url = serverURL + '/users/countRetired';
+      var url = serverURL + '/users/count-retired';
       var params = { method: 'GET', url: url };
       writeAuthorization(params, 'secret-token');
       var res = yield httpClient.request(params);
@@ -387,7 +387,7 @@ suite('KindaRepositoryServer', function() {
     });
 
     test('call custom method returning a file', function *() {
-      var url = serverURL + '/users/aaa/generateReport';
+      var url = serverURL + '/users/aaa/generate-report';
       var params = { method: 'GET', url: url };
       writeAuthorization(params, 'secret-token');
       var res = yield httpClient.request(params);
