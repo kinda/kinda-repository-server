@@ -17,7 +17,7 @@ var util = require('kinda-util').create();
 var KindaRepositoryServer = require('./');
 
 suite('KindaRepositoryServer', function() {
-  var users, httpServer, serverURL;
+  var users, superusers, httpServer, serverURL;
 
   var catchError = function *(fn) {
     var err;
@@ -64,8 +64,14 @@ suite('KindaRepositoryServer', function() {
       };
     });
 
+    var Superusers = Users.extend('Superusers', function() {
+      this.Item = this.Item.extend('Superuser', function() {
+        this.addProperty('superpower', String);
+      });
+    });
+
     var repository = KindaLocalRepository.create(
-      'Test', 'mysql://test@localhost/test', [Users]
+      'Test', 'mysql://test@localhost/test', [Users, Superusers]
     );
 
     var repositoryServer = KindaRepositoryServer.create(repository, repository, {
@@ -81,11 +87,11 @@ suite('KindaRepositoryServer', function() {
       signOutHandler: function *(authorization) {
         // delete authorization token
       },
+      authorizeHandler: function *(request) {
+        return request.authorization === 'secret-token';
+      },
       collections: {
         Users: {
-          authorizeHandler: function *(request) {
-            return request.authorization === 'secret-token';
-          },
           collectionMethods: {
             countRetired: true,
             echo: function *(request) {
@@ -111,8 +117,8 @@ suite('KindaRepositoryServer', function() {
           },
           eventListeners: {
             willPutItem: function *(request) {
-              if (request.item.firstName === 'Manuel') {
-                request.item.firstName = 'Manu';
+              if (request.item.firstName === 'Bobby') {
+                request.item.firstName = 'Bob';
               }
             }
           }
@@ -142,7 +148,7 @@ suite('KindaRepositoryServer', function() {
   };
 
   test('test authorization', function *() {
-    var url = serverURL + '/users';
+    var url = serverURL + '/superusers';
     var body = { firstName: 'Manu', age: 42 };
     var params = { method: 'POST', url: url, body: body };
     var res = yield httpClient.request(params);
@@ -175,44 +181,56 @@ suite('KindaRepositoryServer', function() {
   });
 
   test('put, get and delete an item', function *() {
-    var url = serverURL + '/users';
-    var body = { firstName: 'Manu', age: 42 };
+    var url = serverURL + '/superusers';
+    var body = { firstName: 'Manu', age: 42, superpower: 'telepathy' };
     var params = { method: 'POST', url: url, body: body };
     writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 201);
-    var id = res.body.id;
+    var result = res.body;
+    assert.strictEqual(result.class, 'Superuser');
+    var id = result.value.id;
     assert.ok(id);
-    assert.strictEqual(res.body.firstName, 'Manu');
-    assert.strictEqual(res.body.age, 42);
+    assert.strictEqual(result.value.firstName, 'Manu');
+    assert.strictEqual(result.value.age, 42);
+    assert.strictEqual(result.value.superpower, 'telepathy');
 
     var url = serverURL + '/users/' + id;
     var params = { method: 'GET', url: url };
     writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
-    assert.strictEqual(res.body.id, id);
-    assert.strictEqual(res.body.firstName, 'Manu');
-    assert.strictEqual(res.body.age, 42);
+    var result = res.body;
+    assert.strictEqual(result.class, 'Superuser');
+    assert.strictEqual(result.value.id, id);
+    assert.strictEqual(result.value.firstName, 'Manu');
+    assert.strictEqual(result.value.age, 42);
+    assert.strictEqual(result.value.superpower, 'telepathy');
 
-    var url = serverURL + '/users/' + id;
-    var body = { id: id, firstName: 'Manu', age: 43 };
+    var url = serverURL + '/superusers/' + id;
+    var body = { id: id, firstName: 'Manu', age: 43, superpower: 'telepathy' };
     var params = { method: 'PUT', url: url, body: body };
     writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
-    assert.strictEqual(res.body.id, id);
-    assert.strictEqual(res.body.firstName, 'Manu');
-    assert.strictEqual(res.body.age, 43);
+    var result = res.body;
+    assert.strictEqual(result.class, 'Superuser');
+    assert.strictEqual(result.value.id, id);
+    assert.strictEqual(result.value.firstName, 'Manu');
+    assert.strictEqual(result.value.age, 43);
+    assert.strictEqual(result.value.superpower, 'telepathy');
 
     var url = serverURL + '/users/' + id;
     var params = { method: 'GET', url: url };
     writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
-    assert.strictEqual(res.body.id, id);
-    assert.strictEqual(res.body.firstName, 'Manu');
-    assert.strictEqual(res.body.age, 43);
+    var result = res.body;
+    assert.strictEqual(result.class, 'Superuser');
+    assert.strictEqual(result.value.id, id);
+    assert.strictEqual(result.value.firstName, 'Manu');
+    assert.strictEqual(result.value.age, 43);
+    assert.strictEqual(result.value.superpower, 'telepathy');
 
     var url = serverURL + '/users/' + id;
     var params = { method: 'DELETE', url: url };
@@ -266,24 +284,26 @@ suite('KindaRepositoryServer', function() {
 
   test('use event listeners', function *() {
     var url = serverURL + '/users';
-    var body = { firstName: 'Manuel', age: 42 };
+    var body = { firstName: 'Bobby', age: 31 };
     var params = { method: 'POST', url: url, body: body };
     writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 201);
-    var id = res.body.id;
+    var result = res.body;
+    var id = result.value.id;
     assert.ok(id);
-    assert.strictEqual(res.body.firstName, 'Manu');
-    assert.strictEqual(res.body.age, 42);
+    assert.strictEqual(result.value.firstName, 'Bob');
+    assert.strictEqual(result.value.age, 31);
 
     var url = serverURL + '/users/' + id;
     var params = { method: 'GET', url: url };
     writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
-    assert.strictEqual(res.body.id, id);
-    assert.strictEqual(res.body.firstName, 'Manu');
-    assert.strictEqual(res.body.age, 42);
+    var result = res.body;
+    assert.strictEqual(result.value.id, id);
+    assert.strictEqual(result.value.firstName, 'Bob');
+    assert.strictEqual(result.value.age, 31);
 
     var url = serverURL + '/users/' + id;
     var params = { method: 'DELETE', url: url };
@@ -317,7 +337,8 @@ suite('KindaRepositoryServer', function() {
       writeAuthorization(params, 'secret-token');
       var res = yield httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
-      assert.deepEqual(res.body, [
+      var items = _.pluck(res.body, 'value');
+      assert.deepEqual(items, [
         { id: 'bbb', firstName: 'Jack', age: 62 },
         { id: 'ccc', firstName: 'Alan', age: 40 }
       ]);

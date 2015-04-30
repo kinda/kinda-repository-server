@@ -5,6 +5,8 @@ var parseBody = require('co-body');
 var KindaObject = require('kinda-object');
 var util = require('kinda-util').create();
 
+// TODO: authorize handler, custom methods and event listeners should inherit from super classes
+
 var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function() {
   // Options:
   //   signInWithCredentialsHandler:
@@ -229,12 +231,20 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   this.handleGetItemRequest = function *(ctx, id) {
     var item = yield this._getItem(ctx, id);
     yield this.authorizeRequest(ctx, 'getItem', { item: item });
-    var clientItem = item && ctx.clientCollection.unserializeItem(item);
+    var clientItem;
+    if (item) {
+      var className = item.getClassName();
+      var clientCollection = this.clientRepository.createCollectionFromItemClassName(className);
+      var clientItem = clientCollection.unserializeItem(item);
+    }
     yield this.emitEvent(ctx, 'didGetItem', {
       clientItem: clientItem, item: item
     });
     if (clientItem) {
-      ctx.body = clientItem.serialize();
+      ctx.body = {
+        class: clientItem.getClassName(),
+        value: clientItem.serialize()
+      };
     } else {
       ctx.status = 204;
     }
@@ -257,7 +267,10 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
         clientItem: clientItem, item: item
       });
       ctx.status = 201;
-      ctx.body = clientItem.serialize();
+      ctx.body = {
+        class: clientItem.getClassName(),
+        value: clientItem.serialize()
+      };
     }.bind(this));
   };
 
@@ -279,7 +292,10 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
         clientItem: clientItem, item: item
       });
       ctx.status = 200;
-      ctx.body = clientItem.serialize();
+      ctx.body = {
+        class: clientItem.getClassName(),
+        value: clientItem.serialize()
+      };
     }.bind(this));
   };
 
@@ -298,13 +314,20 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     yield this.authorizeRequest(ctx, 'findItems');
     var items = yield ctx.collection.findItems(ctx.options);
     var clientItems = items.map(function(item) {
-      return ctx.clientCollection.unserializeItem(item);
+      var className = item.getClassName();
+      var clientCollection = this.clientRepository.createCollectionFromItemClassName(className);
+      return clientCollection.unserializeItem(item);
     }, this);
     yield this.emitEvent(ctx, 'didFindItems', {
       clientItems: clientItems, items: items
     });
     ctx.status = 200;
-    ctx.body = _.invoke(clientItems, 'serialize');
+    ctx.body = _.map(clientItems, function(clientItem) {
+      return {
+        class: clientItem.getClassName(),
+        value: clientItem.serialize()
+      };
+    });
   };
 
   this.handleCountItemsRequest = function *(ctx) {
