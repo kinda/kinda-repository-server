@@ -329,6 +329,20 @@ suite('KindaRepositoryServer', function() {
       yield users.deleteItem('eee', { errorIfMissing: false });
     });
 
+    test('get serveral items at once', function *() {
+      var ids = ['aaa', 'eee'];
+      var url = serverURL + '/users/get-items';
+      var params = { method: 'POST', url: url, body: ids };
+      writeAuthorization(params, 'secret-token');
+      var res = yield httpClient.request(params);
+      assert.strictEqual(res.statusCode, 201);
+      var items = _.pluck(res.body, 'value');
+      assert.deepEqual(items, [
+        { id: 'aaa', firstName: 'Bob', age: 20 },
+        { id: 'eee', firstName: 'John', age: 30 }
+      ]);
+    });
+
     test('find items between two existing items', function *() {
       var options = { start: 'bbb', end: 'ccc' };
       var query = querystring.stringify(util.encodeObject(options));

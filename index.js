@@ -163,7 +163,9 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     var camelCasedFragment2 = _.camelCase(fragment2);
 
     var method = ctx.method;
-    if (method === 'GET' && fragment1 === 'count' && !fragment2) {
+    if (method === 'POST' && fragment1 === 'get-items' && !fragment2) {
+      yield this.handleGetItemsRequest(ctx);
+    } else if (method === 'GET' && fragment1 === 'count' && !fragment2) {
       yield this.handleCountItemsRequest(ctx);
     } else if ((method === 'GET' || method === 'POST') && (ctx.registeredCollection.collectionMethods.hasOwnProperty(camelCasedFragment1)) && !fragment2) {
       yield this.handleCustomCollectionMethodRequest(ctx, camelCasedFragment1);
@@ -308,6 +310,28 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       yield this.emitEvent(ctx, 'didDeleteItem', { item: item });
     }
     ctx.status = 204;
+  };
+
+  this.handleGetItemsRequest = function *(ctx) {
+    yield this.readBody(ctx);
+    yield this.authorizeRequest(ctx, 'getItems');
+    var items = yield ctx.collection.getItems(ctx.request.body, ctx.options);
+    var cache = {};
+    var clientItems = items.map(function(item) {
+      var className = item.getClassName();
+      var clientCollection = this.clientRepository.createCollectionFromItemClassName(className, cache);
+      return clientCollection.unserializeItem(item);
+    }, this);
+    yield this.emitEvent(ctx, 'didGetItems', {
+      clientItems: clientItems, items: items
+    });
+    ctx.status = 201;
+    ctx.body = _.map(clientItems, function(clientItem) {
+      return {
+        class: clientItem.getClassName(),
+        value: clientItem.serialize()
+      };
+    });
   };
 
   this.handleFindItemsRequest = function *(ctx) {
