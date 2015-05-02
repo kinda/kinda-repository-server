@@ -313,9 +313,10 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   this.handleFindItemsRequest = function *(ctx) {
     yield this.authorizeRequest(ctx, 'findItems');
     var items = yield ctx.collection.findItems(ctx.options);
+    var cache = {};
     var clientItems = items.map(function(item) {
       var className = item.getClassName();
-      var clientCollection = this.clientRepository.createCollectionFromItemClassName(className);
+      var clientCollection = this.clientRepository.createCollectionFromItemClassName(className, cache);
       return clientCollection.unserializeItem(item);
     }, this);
     yield this.emitEvent(ctx, 'didFindItems', {
