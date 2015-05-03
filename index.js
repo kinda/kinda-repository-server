@@ -64,6 +64,10 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   };
 
   this.handleRequest = function *(ctx, path, next) {
+    var query = util.decodeObject(ctx.query);
+    ctx.options = query;
+    ctx.authorization = this.authorizationUnserializer({ query: query });
+
     var slug = path;
     if (_.startsWith(slug, '/')) slug = slug.slice(1);
     var index = slug.indexOf('/');
@@ -73,20 +77,67 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     } else {
       path = '';
     }
+
+    if (slug === 'get-repository-id') {
+      yield this.handleGetRepositoryIdRequest(ctx);
+      return;
+    }
+
     if (slug === 'authorizations') {
       yield this.handleAuthorizationRequest(ctx, path, next);
       return;
     }
+
     var registeredCollection = this.registeredCollections[slug];
     if (registeredCollection) {
       yield this.handleCollectionRequest(ctx, registeredCollection, path, next);
       return;
     }
+
     yield next;
   };
 
   this.readBody = function *(ctx) {
     ctx.request.body = yield parseBody.json(ctx, { limit: '8mb' });
+  };
+
+  this.authorizationUnserializer = function(obj) { // can be overridden
+    return obj.query && obj.query.authorization;
+  };
+
+  this.authorizeRequest = function *(ctx, method, request) {
+    if (!request) request = {};
+    var handler;
+    if (ctx.registeredCollection) {
+      handler = ctx.registeredCollection.authorizeHandler;
+    }
+    if (!handler) handler = this.authorizeHandler;
+    if (!handler) return;
+    request.authorization = ctx.authorization;
+    request.collection = ctx.collection;
+    request.clientCollection = ctx.clientCollection;
+    request.method = method;
+    request.options = ctx.options;
+    var isAuthorized = yield handler(request);
+    if (!isAuthorized) ctx.throw(403, 'authorization failed');
+  };
+
+  this.emitEvent = function *(ctx, event, request) {
+    if (!request) request = {};
+    request.collection = ctx.collection;
+    request.clientCollection = ctx.clientCollection;
+    request.event = event;
+    request.options = ctx.options;
+    yield ctx.registeredCollection.emitAsync(event, request);
+  };
+
+  // === Repository requests ===
+
+  this.handleGetRepositoryIdRequest = function *(ctx) {
+    yield this.authorizeRequest(ctx, 'getRepositoryId');
+    var id = yield this.repository.getRepositoryId();
+    ctx.type = 'application/json';
+    ctx.body = JSON.stringify(id);
   };
 
   // === Authorization requests ===
@@ -147,9 +198,6 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     ctx.collection.context = this;
     ctx.clientCollection = this.clientRepository.createCollection(name);
     ctx.clientCollection.context = this;
-    ctx.options = util.decodeObject(ctx.query);
-
-    this.readAuthorization(ctx);
 
     var fragment1 = path;
     var fragment2 = '';
@@ -186,37 +234,6 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     } else {
       yield next;
     }
-  };
-
-  this.readAuthorization = function(ctx) {
-    var query = util.decodeObject(ctx.query);
-    ctx.authorization = this.authorizationUnserializer({ query: query });
-  };
-
-  this.authorizationUnserializer = function(obj) { // can be overridden
-    return obj.query && obj.query.authorization;
-  };
-
-  this.authorizeRequest = function *(ctx, method, request) {
-    if (!request) request = {};
-    var handler = ctx.registeredCollection.authorizeHandler || this.authorizeHandler;
-    if (!handler) return;
-    request.authorization = ctx.authorization;
-    request.collection = ctx.collection;
-    request.clientCollection = ctx.clientCollection;
-    request.method = method;
-    request.options = ctx.options;
-    var isAuthorized = yield handler(request);
-    if (!isAuthorized) ctx.throw(403, 'authorization failed');
-  };
-
-  this.emitEvent = function *(ctx, event, request) {
-    if (!request) request = {};
-    request.collection = ctx.collection;
-    request.clientCollection = ctx.clientCollection;
-    request.event = event;
-    request.options = ctx.options;
-    yield ctx.registeredCollection.emitAsync(event, request);
   };
 
   this._getItem = function *(ctx, id) {

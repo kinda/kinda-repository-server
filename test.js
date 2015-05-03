@@ -137,7 +137,7 @@ suite('KindaRepositoryServer', function() {
 
   suiteTeardown(function *() {
     httpServer.close();
-    yield users.getRepository().database.destroyDatabase();
+    yield users.getRepository().destroyRepository();
   });
 
   var writeAuthorization = function(params, authorization) {
@@ -178,6 +178,15 @@ suite('KindaRepositoryServer', function() {
     var url = serverURL + '/authorizations/secret-token';
     var res = yield httpClient.del(url);
     assert.strictEqual(res.statusCode, 204);
+  });
+
+  test('get repository id', function *() {
+    var url = serverURL + '/get-repository-id';
+    var params = { method: 'GET', url: url };
+    writeAuthorization(params, 'secret-token');
+    var res = yield httpClient.request(params);
+    assert.strictEqual(res.statusCode, 200);
+    assert.ok(res.body)
   });
 
   test('put, get and delete an item', function *() {
