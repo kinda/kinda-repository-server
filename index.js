@@ -122,15 +122,6 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     if (!isAuthorized) ctx.throw(403, 'authorization failed');
   };
 
-  this.emitEvent = function *(ctx, event, request) {
-    if (!request) request = {};
-    request.collection = ctx.collection;
-    request.clientCollection = ctx.clientCollection;
-    request.event = event;
-    request.options = ctx.options;
-    yield ctx.registeredCollection.emitAsync(event, request);
-  };
-
   // === Repository requests ===
 
   this.handleGetRepositoryIdRequest = function *(ctx) {
@@ -234,6 +225,15 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     } else {
       yield next;
     }
+  };
+
+  this.emitEvent = function *(ctx, event, request) {
+    if (!request) request = {};
+    request.collection = ctx.collection;
+    request.clientCollection = ctx.clientCollection;
+    request.event = event;
+    request.options = ctx.options;
+    yield ctx.registeredCollection.emitAsync(event, request);
   };
 
   this._getItem = function *(ctx, id) {
