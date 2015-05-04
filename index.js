@@ -82,7 +82,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       path = '';
     }
 
-    if (slug === 'get-repository-id') {
+    if (slug === '') {
       yield this.handleGetRepositoryIdRequest(ctx);
       return;
     }

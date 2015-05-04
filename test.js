@@ -181,7 +181,7 @@ suite('KindaRepositoryServer', function() {
   });
 
   test('get repository id', function *() {
-    var url = serverURL + '/get-repository-id';
+    var url = serverURL;
     var params = { method: 'GET', url: url };
     writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
