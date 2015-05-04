@@ -48,6 +48,10 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     }, this);
   });
 
+  this.use = function(plugin) {
+    plugin.plug(this);
+  };
+
   this.registerCollection = function(name, options) {
     if (!options) options = {};
     var slug = _.kebabCase(name);
