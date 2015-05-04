@@ -186,7 +186,7 @@ suite('KindaRepositoryServer', function() {
     writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
-    assert.ok(res.body)
+    assert.ok(res.body.repositoryId)
   });
 
   test('put, get and delete an item', function *() {

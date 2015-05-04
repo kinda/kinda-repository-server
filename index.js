@@ -131,8 +131,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   this.handleGetRepositoryIdRequest = function *(ctx) {
     yield this.authorizeRequest(ctx, 'getRepositoryId');
     var id = yield this.repository.getRepositoryId();
-    ctx.type = 'application/json';
-    ctx.body = JSON.stringify(id);
+    ctx.body = { repositoryId: id };
   };
 
   // === Authorization requests ===
