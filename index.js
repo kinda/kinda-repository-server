@@ -288,7 +288,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       yield this.emitEvent(ctx, 'willPutItem', {
         clientItem: clientItem, item: item
       });
-      yield item.save();
+      yield item.save(ctx.options);
       clientItem = ctx.clientCollection.unserializeItem(item);
       yield this.emitEvent(ctx, 'didPutItem', {
         clientItem: clientItem, item: item
@@ -313,7 +313,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       yield this.emitEvent(ctx, 'willPutItem', {
         clientItem: clientItem, item: item
       });
-      yield item.save();
+      yield item.save(ctx.options);
       clientItem = ctx.clientCollection.unserializeItem(item);
       yield this.emitEvent(ctx, 'didPutItem', {
         clientItem: clientItem, item: item
@@ -331,7 +331,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     if (item) {
       yield this.authorizeRequest(ctx, 'deleteItem', { item: item });
       yield this.emitEvent(ctx, 'willDeleteItem', { item: item });
-      yield item.delete();
+      yield item.delete(ctx.options);
       yield this.emitEvent(ctx, 'didDeleteItem', { item: item });
     }
     ctx.status = 204;
