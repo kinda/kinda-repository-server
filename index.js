@@ -82,6 +82,11 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       path = '';
     }
 
+    yield this._handleRequest(ctx, slug, path, next);
+  };
+
+  this._handleRequest = function *(ctx, slug, path, next) {
+    // monkey patched in kinda-repository-synchronizer/history-server.js
     if (slug === '') {
       yield this.handleGetRepositoryIdRequest(ctx);
       return;
