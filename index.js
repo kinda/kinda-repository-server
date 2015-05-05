@@ -244,14 +244,12 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     yield ctx.registeredCollection.emitAsync(event, request);
   };
 
-  this._getItem = function *(ctx, id) {
+  this._getItem = function *(ctx, id, errorIfMissing) {
+    if (errorIfMissing == null) errorIfMissing = ctx.options.errorIfMissing;
+    if (errorIfMissing == null) errorIfMissing = true;
     if (!id) ctx.throw(400, 'id required');
     var item = yield ctx.collection.getItem(id, { errorIfMissing: false });
-    if (!item) {
-      var errorIfMissing = ctx.options.errorIfMissing;
-      if (errorIfMissing == null) errorIfMissing = true;
-      if (errorIfMissing) ctx.throw(404, 'item not found');
-    }
+    if (!item && errorIfMissing) ctx.throw(404, 'item not found');
     return item;
   };
 
@@ -305,16 +303,21 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     yield this.readBody(ctx);
     var clientItem = ctx.clientCollection.unserializeItem(ctx.request.body);
     yield ctx.collection.transaction(function *() {
-      var item = yield this._getItem(ctx, id);
+      var errorIfMissing = ctx.options.createIfMissing ? false : undefined;
+      var item = yield this._getItem(ctx, id, errorIfMissing);
       yield this.authorizeRequest(ctx, 'putItem', {
         clientItem: clientItem, item: item
       });
-      item.updateValue(clientItem);
+      if (item) {
+        item.updateValue(clientItem);
+      } else {
+        item = ctx.collection.unserializeItem(clientItem);
+      }
       yield this.emitEvent(ctx, 'willPutItem', {
         clientItem: clientItem, item: item
       });
       yield item.save(ctx.options);
-      clientItem = ctx.clientCollection.unserializeItem(item);
+      clientItem = ctx.clientCollection.createItem(item);
       yield this.emitEvent(ctx, 'didPutItem', {
         clientItem: clientItem, item: item
       });
