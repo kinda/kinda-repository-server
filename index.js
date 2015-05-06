@@ -330,14 +330,15 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   };
 
   this.handleDeleteItemRequest = function *(ctx, id) {
+    var hasBeenDeleted = false;
     var item = yield this._getItem(ctx, id);
     if (item) {
       yield this.authorizeRequest(ctx, 'deleteItem', { item: item });
       yield this.emitEvent(ctx, 'willDeleteItem', { item: item });
-      yield item.delete(ctx.options);
-      yield this.emitEvent(ctx, 'didDeleteItem', { item: item });
+      hasBeenDeleted = yield item.delete(ctx.options);
+      if (hasBeenDeleted) yield this.emitEvent(ctx, 'didDeleteItem', { item: item });
     }
-    ctx.status = 204;
+    ctx.body = hasBeenDeleted;
   };
 
   this.handleGetItemsRequest = function *(ctx) {
@@ -395,9 +396,9 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
 
   this.handleFindAndDeleteItemsRequest = function *(ctx) {
     yield this.authorizeRequest(ctx, 'findAndDeleteItems');
-    yield ctx.collection.findAndDeleteItems(ctx.options);
+    var deletedItemsCount = yield ctx.collection.findAndDeleteItems(ctx.options);
     yield this.emitEvent(ctx, 'didFindAndDeleteItems');
-    ctx.status = 204;
+    ctx.body = deletedItemsCount;
   };
 
   this.handleCustomCollectionMethodRequest = function *(ctx, method) {

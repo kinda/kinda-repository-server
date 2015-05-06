@@ -245,7 +245,8 @@ suite('KindaRepositoryServer', function() {
     var params = { method: 'DELETE', url: url };
     writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
-    assert.strictEqual(res.statusCode, 204);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body, true);
 
     var options = { errorIfMissing: false };
     var query = querystring.stringify(util.encodeObject(options));
@@ -287,8 +288,8 @@ suite('KindaRepositoryServer', function() {
     var params = { method: 'DELETE', url: url };
     writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
-    assert.strictEqual(res.statusCode, 204);
-    assert.isUndefined(res.body);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body, false);
   });
 
   test('use event listeners', function *() {
@@ -318,7 +319,8 @@ suite('KindaRepositoryServer', function() {
     var params = { method: 'DELETE', url: url };
     writeAuthorization(params, 'secret-token');
     var res = yield httpClient.request(params);
-    assert.strictEqual(res.statusCode, 204);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body, true);
   });
 
   suite('with many items', function() {
@@ -392,7 +394,8 @@ suite('KindaRepositoryServer', function() {
       var params = { method: 'DELETE', url: url };
       writeAuthorization(params, 'secret-token');
       var res = yield httpClient.request(params);
-      assert.strictEqual(res.statusCode, 204);
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(res.body, 2);
 
       var url = serverURL + '/users/count';
       var params = { method: 'GET', url: url };
