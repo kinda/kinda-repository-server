@@ -92,6 +92,11 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       return;
     }
 
+    if (slug === 'ping') {
+      yield this.handlePingRequest(ctx);
+      return;
+    }
+
     if (slug === 'authorizations') {
       yield this.handleAuthorizationRequest(ctx, path, next);
       return;
@@ -137,6 +142,11 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     yield this.authorizeRequest(ctx, 'getRepositoryId');
     var id = yield this.repository.getRepositoryId();
     ctx.body = { repositoryId: id };
+  };
+
+  this.handlePingRequest = function *(ctx) {
+    ctx.body = 'pong';
+    ctx.logLevel = 'silence';
   };
 
   // === Authorization requests ===
