@@ -1,6 +1,7 @@
 "use strict";
 
 var _ = require('lodash');
+var Qs = require('qs');
 var parseBody = require('co-body');
 var KindaObject = require('kinda-object');
 var util = require('kinda-util').create();
@@ -68,7 +69,8 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   };
 
   this.handleRequest = function *(ctx, path, next) {
-    var query = util.decodeObject(ctx.query);
+    var query = Qs.parse(ctx.querystring);
+    query = util.decodeValue(query);
     ctx.options = query;
     ctx.authorization = this.authorizationUnserializer({ query: query });
 

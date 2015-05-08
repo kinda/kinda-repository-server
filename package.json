@@ -20,7 +20,8 @@
     "co-body": "^1.1.0",
     "kinda-object": "^0.1.0",
     "kinda-util": "^0.1.6",
-    "lodash": "^3.5.0"
+    "lodash": "^3.5.0",
+    "qs": "^2.4.1"
   },
   "devDependencies": {
     "chai": "^2.1.2",
