@@ -249,7 +249,7 @@ suite('KindaRepositoryServer', function() {
     assert.strictEqual(res.body, true);
 
     var options = { errorIfMissing: false };
-    var query = querystring.stringify(util.encodeObject(options));
+    var query = querystring.stringify(util.encodeValue(options));
     var url = serverURL + '/users/' + id + '?' + query;
     var params = { method: 'GET', url: url };
     writeAuthorization(params, 'secret-token');
@@ -266,7 +266,7 @@ suite('KindaRepositoryServer', function() {
     assert.strictEqual(res.statusCode, 404);
 
     var options = { errorIfMissing: false };
-    var query = querystring.stringify(util.encodeObject(options));
+    var query = querystring.stringify(util.encodeValue(options));
     var url = serverURL + '/users/xyz?' + query;
     var params = { method: 'GET', url: url };
     writeAuthorization(params, 'secret-token');
@@ -283,7 +283,7 @@ suite('KindaRepositoryServer', function() {
     assert.strictEqual(res.statusCode, 404);
 
     var options = { errorIfMissing: false };
-    var query = querystring.stringify(util.encodeObject(options));
+    var query = querystring.stringify(util.encodeValue(options));
     var url = serverURL + '/users/xyz?' + query;
     var params = { method: 'DELETE', url: url };
     writeAuthorization(params, 'secret-token');
@@ -356,7 +356,7 @@ suite('KindaRepositoryServer', function() {
 
     test('find items between two existing items', function *() {
       var options = { start: 'bbb', end: 'ccc' };
-      var query = querystring.stringify(util.encodeObject(options));
+      var query = querystring.stringify(util.encodeValue(options));
       var url = serverURL + '/users?' + query;
       var params = { method: 'GET', url: url };
       writeAuthorization(params, 'secret-token');
@@ -378,7 +378,7 @@ suite('KindaRepositoryServer', function() {
       assert.strictEqual(res.body, 5);
 
       var options = { start: 'bbb', end: 'ccc' };
-      var query = querystring.stringify(util.encodeObject(options));
+      var query = querystring.stringify(util.encodeValue(options));
       var url = serverURL + '/users/count?' + query;
       var params = { method: 'GET', url: url };
       writeAuthorization(params, 'secret-token');
@@ -389,7 +389,7 @@ suite('KindaRepositoryServer', function() {
 
     test('find and delete items between two existing items', function *() {
       var options = { start: 'bbb', end: 'ccc' };
-      var query = querystring.stringify(util.encodeObject(options));
+      var query = querystring.stringify(util.encodeValue(options));
       var url = serverURL + '/users?' + query;
       var params = { method: 'DELETE', url: url };
       writeAuthorization(params, 'secret-token');
