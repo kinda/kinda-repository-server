@@ -127,7 +127,7 @@ suite('KindaRepositoryServer', function() {
     });
 
     var server = koa();
-    server.use(repositoryServer.getMiddleware('/v1'));
+    server.use(repositoryServer.getMiddleware(serverPrefix));
     httpServer = http.createServer(server.callback());
     httpServer.listen(serverPort);
     serverURL = 'http://localhost:' + serverPort + serverPrefix;
