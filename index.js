@@ -324,6 +324,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
         item.updateValue(clientItem);
       } else {
         item = ctx.collection.unserializeItem(clientItem);
+        item.isNew = false;
       }
       yield this.emitEvent(ctx, 'willPutItem', {
         clientItem: clientItem, item: item
