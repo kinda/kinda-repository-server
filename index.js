@@ -206,9 +206,7 @@ var KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     var name = registeredCollection.name;
     ctx.registeredCollection = registeredCollection;
     ctx.collection = this.repository.createCollection(name);
-    ctx.collection.context = this;
     ctx.clientCollection = this.clientRepository.createCollection(name);
-    ctx.clientCollection.context = this;
 
     var fragment1 = path;
     var fragment2 = '';
