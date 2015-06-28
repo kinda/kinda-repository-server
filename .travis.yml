@@ -17,6 +17,7 @@ deploy:
   email: mvila@3base.com
   api_key:
     secure: tA4yo0nkw/2PlYphhpoXtlIgzLSBdJzPb7uomiZiBtPvnCckUwZPV4T44g+zCStK3mJvnfZcIGAxZkympadIlz05DpEmcA5mRQeKR9FJeRWHjF+I+vQesUluLrqKWCbDSLMgl7MIUjPridTGrgkInn13We2OugQ50ZVWeSQJ7NU=
+  skip_cleanup: true
 notifications:
   email: false
   slack:
