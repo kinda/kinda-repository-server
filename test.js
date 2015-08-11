@@ -67,26 +67,26 @@ suite('KindaRepositoryServer', function() {
 
     let repositoryServer = KindaRepositoryServer.create({
       repository,
-      signInWithCredentialsHandler: async function(credentials) {
+      async signInWithCredentialsHandler(credentials) {
         if (!credentials) return undefined;
         if (credentials.username !== 'mvila@3base.com') return undefined;
         if (credentials.password !== 'password') return undefined;
         return 'secret-token';
       },
-      signInWithAuthorizationHandler: async function(authorization) {
+      async signInWithAuthorizationHandler(authorization) {
         return authorization === 'secret-token';
       },
-      signOutHandler: async function(authorization) { // eslint-disable-line
+      async signOutHandler(authorization) { // eslint-disable-line
         // delete authorization token
       },
-      authorizeHandler: async function(request) {
+      async authorizeHandler(request) {
         return request.authorization === 'secret-token';
       },
       collections: {
         Users: {
           collectionMethods: {
             countRetired: true,
-            echo: async function(request) {
+            async echo(request) {
               return {
                 body: await request.collection.echo(request.body)
               };
@@ -94,7 +94,7 @@ suite('KindaRepositoryServer', function() {
           },
           itemMethods: {
             get: true,
-            generateReport: async function(request) {
+            async generateReport(request) {
               let path = await request.item.generateReport();
               let stream = fs.createReadStream(path);
               stream.on('close', () => fs.unlink(path));
@@ -108,7 +108,7 @@ suite('KindaRepositoryServer', function() {
             }
           },
           eventListeners: {
-            willPutItem: async function(request) {
+            async willPutItem(request) {
               if (request.item.firstName === 'Bobby') {
                 request.item.firstName = 'Bob';
               }
