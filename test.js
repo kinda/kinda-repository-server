@@ -6,7 +6,6 @@ let querystring = require('querystring');
 let fs = require('fs');
 let nodePath = require('path');
 let os = require('os');
-require('co-mocha');
 let assert = require('chai').assert;
 let _ = require('lodash');
 let koa = require('koa');
@@ -19,7 +18,7 @@ let KindaRepositoryServer = require('./src');
 suite('KindaRepositoryServer', function() {
   let users, httpServer, serverURL;
 
-  suiteSetup(function *() {
+  suiteSetup(async function() {
     let serverPort = 8888;
     let serverPrefix = '/v1';
 
@@ -29,19 +28,19 @@ suite('KindaRepositoryServer', function() {
         this.addProperty('firstName', String);
         this.addProperty('age', Number);
 
-        this.get = function *() {
+        this.get = async function() {
           return this.serialize();
         };
 
-        this.generateReport = function *() {
+        this.generateReport = async function() {
           let path = nodePath.join(os.tmpdir(), 'report-123456.txt');
           fs.writeFileSync(path, 'Hello, World!');
           return path;
         };
       });
 
-      this.countRetired = function *() {
-        let items = yield this.findItems();
+      this.countRetired = async function() {
+        let items = await this.findItems();
         let count = 0;
         items.forEach(function(item) {
           if (item.age >= 60) count++;
@@ -49,7 +48,7 @@ suite('KindaRepositoryServer', function() {
         return count;
       };
 
-      this.echo = function *(data) {
+      this.echo = async function(data) {
         return data;
       };
     });
@@ -68,35 +67,35 @@ suite('KindaRepositoryServer', function() {
 
     let repositoryServer = KindaRepositoryServer.create({
       repository,
-      *signInWithCredentialsHandler(credentials) {
+      signInWithCredentialsHandler: async function(credentials) {
         if (!credentials) return undefined;
         if (credentials.username !== 'mvila@3base.com') return undefined;
         if (credentials.password !== 'password') return undefined;
         return 'secret-token';
       },
-      *signInWithAuthorizationHandler(authorization) {
+      signInWithAuthorizationHandler: async function(authorization) {
         return authorization === 'secret-token';
       },
-      *signOutHandler(authorization) { // eslint-disable-line
+      signOutHandler: async function(authorization) { // eslint-disable-line
         // delete authorization token
       },
-      *authorizeHandler(request) {
+      authorizeHandler: async function(request) {
         return request.authorization === 'secret-token';
       },
       collections: {
         Users: {
           collectionMethods: {
             countRetired: true,
-            *echo(request) {
+            echo: async function(request) {
               return {
-                body: yield request.collection.echo(request.body)
+                body: await request.collection.echo(request.body)
               };
             }
           },
           itemMethods: {
             get: true,
-            *generateReport(request) {
-              let path = yield request.item.generateReport();
+            generateReport: async function(request) {
+              let path = await request.item.generateReport();
               let stream = fs.createReadStream(path);
               stream.on('close', () => fs.unlink(path));
               return {
@@ -109,7 +108,7 @@ suite('KindaRepositoryServer', function() {
             }
           },
           eventListeners: {
-            *willPutItem(request) {
+            willPutItem: async function(request) {
               if (request.item.firstName === 'Bobby') {
                 request.item.firstName = 'Bob';
               }
@@ -128,9 +127,9 @@ suite('KindaRepositoryServer', function() {
     users = repository.createCollection('Users');
   });
 
-  suiteTeardown(function *() {
+  suiteTeardown(async function() {
     httpServer.close();
-    yield users.repository.destroyRepository();
+    await users.repository.destroyRepository();
   });
 
   let writeAuthorization = function(params, authorization) {
@@ -140,54 +139,56 @@ suite('KindaRepositoryServer', function() {
     params.url = nodeURL.format(parsedURL);
   };
 
-  test('test authorization', function *() {
-    let url = serverURL + '/superusers';
-    let body = { firstName: 'Manu', age: 42 };
-    let params = { method: 'POST', url, body };
-    let res = yield httpClient.request(params);
+  test('test authorization', async function() {
+    let url, body, res, credentials, params;
+
+    url = serverURL + '/superusers';
+    body = { firstName: 'Manu', age: 42 };
+    params = { method: 'POST', url, body };
+    res = await httpClient.request(params);
     assert.strictEqual(res.statusCode, 403);
 
     url = serverURL + '/authorizations';
-    let credentials = { username: 'mvila@3base.com', password: 'wrongpass' };
+    credentials = { username: 'mvila@3base.com', password: 'wrongpass' };
     params = { method: 'POST', url, body: credentials };
-    res = yield httpClient.request(params);
+    res = await httpClient.request(params);
     assert.strictEqual(res.statusCode, 403);
 
     url = serverURL + '/authorizations';
     credentials = { username: 'mvila@3base.com', password: 'password' };
     params = { method: 'POST', url, body: credentials };
-    res = yield httpClient.request(params);
+    res = await httpClient.request(params);
     assert.strictEqual(res.statusCode, 201);
     assert.strictEqual(res.body, 'secret-token');
 
     url = serverURL + '/authorizations/wrong-token';
-    res = yield httpClient.get(url);
+    res = await httpClient.get(url);
     assert.strictEqual(res.statusCode, 403);
 
     url = serverURL + '/authorizations/secret-token';
-    res = yield httpClient.get(url);
+    res = await httpClient.get(url);
     assert.strictEqual(res.statusCode, 204);
 
     url = serverURL + '/authorizations/secret-token';
-    res = yield httpClient.del(url);
+    res = await httpClient.del(url);
     assert.strictEqual(res.statusCode, 204);
   });
 
-  test('get repository id', function *() {
+  test('get repository id', async function() {
     let url = serverURL;
     let params = { method: 'GET', url };
     writeAuthorization(params, 'secret-token');
-    let res = yield httpClient.request(params);
+    let res = await httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
     assert.ok(res.body.repositoryId);
   });
 
-  test('put, get and delete an item', function *() {
+  test('put, get and delete an item', async function() {
     let url = serverURL + '/superusers';
     let body = { firstName: 'Manu', age: 42, superpower: 'telepathy' };
     let params = { method: 'POST', url, body };
     writeAuthorization(params, 'secret-token');
-    let res = yield httpClient.request(params);
+    let res = await httpClient.request(params);
     assert.strictEqual(res.statusCode, 201);
     let result = res.body;
     assert.strictEqual(result.class, 'Superuser');
@@ -200,7 +201,7 @@ suite('KindaRepositoryServer', function() {
     url = serverURL + '/users/' + id;
     params = { method: 'GET', url };
     writeAuthorization(params, 'secret-token');
-    res = yield httpClient.request(params);
+    res = await httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
     result = res.body;
     assert.strictEqual(result.class, 'Superuser');
@@ -213,7 +214,7 @@ suite('KindaRepositoryServer', function() {
     body = { id, firstName: 'Manu', age: 43, superpower: 'telepathy' };
     params = { method: 'PUT', url, body };
     writeAuthorization(params, 'secret-token');
-    res = yield httpClient.request(params);
+    res = await httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
     result = res.body;
     assert.strictEqual(result.class, 'Superuser');
@@ -225,7 +226,7 @@ suite('KindaRepositoryServer', function() {
     url = serverURL + '/users/' + id;
     params = { method: 'GET', url };
     writeAuthorization(params, 'secret-token');
-    res = yield httpClient.request(params);
+    res = await httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
     result = res.body;
     assert.strictEqual(result.class, 'Superuser');
@@ -237,7 +238,7 @@ suite('KindaRepositoryServer', function() {
     url = serverURL + '/users/' + id;
     params = { method: 'DELETE', url };
     writeAuthorization(params, 'secret-token');
-    res = yield httpClient.request(params);
+    res = await httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.body, true);
 
@@ -246,16 +247,16 @@ suite('KindaRepositoryServer', function() {
     url = serverURL + '/users/' + id + '?' + query;
     params = { method: 'GET', url };
     writeAuthorization(params, 'secret-token');
-    res = yield httpClient.request(params);
+    res = await httpClient.request(params);
     assert.strictEqual(res.statusCode, 204);
     assert.isUndefined(res.body);
   });
 
-  test('get a missing item', function *() {
+  test('get a missing item', async function() {
     let url = serverURL + '/users/xyz';
     let params = { method: 'GET', url };
     writeAuthorization(params, 'secret-token');
-    let res = yield httpClient.request(params);
+    let res = await httpClient.request(params);
     assert.strictEqual(res.statusCode, 404);
 
     let options = { errorIfMissing: false };
@@ -263,16 +264,16 @@ suite('KindaRepositoryServer', function() {
     url = serverURL + '/users/xyz?' + query;
     params = { method: 'GET', url };
     writeAuthorization(params, 'secret-token');
-    res = yield httpClient.request(params);
+    res = await httpClient.request(params);
     assert.strictEqual(res.statusCode, 204);
     assert.isUndefined(res.body);
   });
 
-  test('delete a missing item', function *() {
+  test('delete a missing item', async function() {
     let url = serverURL + '/users/xyz';
     let params = { method: 'DELETE', url };
     writeAuthorization(params, 'secret-token');
-    let res = yield httpClient.request(params);
+    let res = await httpClient.request(params);
     assert.strictEqual(res.statusCode, 404);
 
     let options = { errorIfMissing: false };
@@ -280,17 +281,17 @@ suite('KindaRepositoryServer', function() {
     url = serverURL + '/users/xyz?' + query;
     params = { method: 'DELETE', url };
     writeAuthorization(params, 'secret-token');
-    res = yield httpClient.request(params);
+    res = await httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.body, false);
   });
 
-  test('use event listeners', function *() {
+  test('use event listeners', async function() {
     let url = serverURL + '/users';
     let body = { firstName: 'Bobby', age: 31 };
     let params = { method: 'POST', url, body };
     writeAuthorization(params, 'secret-token');
-    let res = yield httpClient.request(params);
+    let res = await httpClient.request(params);
     assert.strictEqual(res.statusCode, 201);
     let result = res.body;
     let id = result.value.id;
@@ -301,7 +302,7 @@ suite('KindaRepositoryServer', function() {
     url = serverURL + '/users/' + id;
     params = { method: 'GET', url };
     writeAuthorization(params, 'secret-token');
-    res = yield httpClient.request(params);
+    res = await httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
     result = res.body;
     assert.strictEqual(result.value.id, id);
@@ -311,34 +312,34 @@ suite('KindaRepositoryServer', function() {
     url = serverURL + '/users/' + id;
     params = { method: 'DELETE', url };
     writeAuthorization(params, 'secret-token');
-    res = yield httpClient.request(params);
+    res = await httpClient.request(params);
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.body, true);
   });
 
   suite('with many items', function() {
-    setup(function *() {
-      yield users.putItem({ id: 'aaa', firstName: 'Bob', age: 20 });
-      yield users.putItem({ id: 'bbb', firstName: 'Jack', age: 62 });
-      yield users.putItem({ id: 'ccc', firstName: 'Alan', age: 40 });
-      yield users.putItem({ id: 'ddd', firstName: 'Joe', age: 40 });
-      yield users.putItem({ id: 'eee', firstName: 'John', age: 30 });
+    setup(async function() {
+      await users.putItem({ id: 'aaa', firstName: 'Bob', age: 20 });
+      await users.putItem({ id: 'bbb', firstName: 'Jack', age: 62 });
+      await users.putItem({ id: 'ccc', firstName: 'Alan', age: 40 });
+      await users.putItem({ id: 'ddd', firstName: 'Joe', age: 40 });
+      await users.putItem({ id: 'eee', firstName: 'John', age: 30 });
     });
 
-    teardown(function *() {
-      yield users.deleteItem('aaa', { errorIfMissing: false });
-      yield users.deleteItem('bbb', { errorIfMissing: false });
-      yield users.deleteItem('ccc', { errorIfMissing: false });
-      yield users.deleteItem('ddd', { errorIfMissing: false });
-      yield users.deleteItem('eee', { errorIfMissing: false });
+    teardown(async function() {
+      await users.deleteItem('aaa', { errorIfMissing: false });
+      await users.deleteItem('bbb', { errorIfMissing: false });
+      await users.deleteItem('ccc', { errorIfMissing: false });
+      await users.deleteItem('ddd', { errorIfMissing: false });
+      await users.deleteItem('eee', { errorIfMissing: false });
     });
 
-    test('get serveral items at once', function *() {
+    test('get serveral items at once', async function() {
       let ids = ['aaa', 'eee'];
       let url = serverURL + '/users/get-items';
       let params = { method: 'POST', url, body: ids };
       writeAuthorization(params, 'secret-token');
-      let res = yield httpClient.request(params);
+      let res = await httpClient.request(params);
       assert.strictEqual(res.statusCode, 201);
       let items = _.pluck(res.body, 'value');
       assert.deepEqual(items, [
@@ -347,13 +348,13 @@ suite('KindaRepositoryServer', function() {
       ]);
     });
 
-    test('find items between two existing items', function *() {
+    test('find items between two existing items', async function() {
       let options = { start: 'bbb', end: 'ccc' };
       let query = querystring.stringify(util.encodeValue(options));
       let url = serverURL + '/users?' + query;
       let params = { method: 'GET', url };
       writeAuthorization(params, 'secret-token');
-      let res = yield httpClient.request(params);
+      let res = await httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       let items = _.pluck(res.body, 'value');
       assert.deepEqual(items, [
@@ -362,11 +363,11 @@ suite('KindaRepositoryServer', function() {
       ]);
     });
 
-    test('count items', function *() {
+    test('count items', async function() {
       let url = serverURL + '/users/count';
       let params = { method: 'GET', url };
       writeAuthorization(params, 'secret-token');
-      let res = yield httpClient.request(params);
+      let res = await httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.body, 5);
 
@@ -375,62 +376,62 @@ suite('KindaRepositoryServer', function() {
       url = serverURL + '/users/count?' + query;
       params = { method: 'GET', url };
       writeAuthorization(params, 'secret-token');
-      res = yield httpClient.request(params);
+      res = await httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.body, 2);
     });
 
-    test('find and delete items between two existing items', function *() {
+    test('find and delete items between two existing items', async function() {
       let options = { start: 'bbb', end: 'ccc' };
       let query = querystring.stringify(util.encodeValue(options));
       let url = serverURL + '/users?' + query;
       let params = { method: 'DELETE', url };
       writeAuthorization(params, 'secret-token');
-      let res = yield httpClient.request(params);
+      let res = await httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.body, 2);
 
       url = serverURL + '/users/count';
       params = { method: 'GET', url };
       writeAuthorization(params, 'secret-token');
-      res = yield httpClient.request(params);
+      res = await httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.body, 3);
     });
 
-    test('call custom method on a collection', function *() {
+    test('call custom method on a collection', async function() {
       let url = serverURL + '/users/count-retired';
       let params = { method: 'GET', url };
       writeAuthorization(params, 'secret-token');
-      let res = yield httpClient.request(params);
+      let res = await httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.body, 1);
     });
 
-    test('call custom method on an item', function *() {
+    test('call custom method on an item', async function() {
       let url = serverURL + '/users/aaa/get';
       let params = { method: 'GET', url };
       writeAuthorization(params, 'secret-token');
-      let res = yield httpClient.request(params);
+      let res = await httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.deepEqual(res.body, { id: 'aaa', firstName: 'Bob', age: 20 });
     });
 
-    test('call custom method with a body', function *() {
+    test('call custom method with a body', async function() {
       let data = [{ id: 'aaa', firstName: 'Bob', age: 20 }];
       let url = serverURL + '/users/echo';
       let params = { method: 'POST', url, body: data };
       writeAuthorization(params, 'secret-token');
-      let res = yield httpClient.request(params);
+      let res = await httpClient.request(params);
       assert.strictEqual(res.statusCode, 201);
       assert.deepEqual(res.body, data);
     });
 
-    test('call custom method returning a file', function *() {
+    test('call custom method returning a file', async function() {
       let url = serverURL + '/users/aaa/generate-report';
       let params = { method: 'GET', url };
       writeAuthorization(params, 'secret-token');
-      let res = yield httpClient.request(params);
+      let res = await httpClient.request(params);
       assert.strictEqual(res.statusCode, 200);
       assert.strictEqual(res.headers['content-type'], 'text/plain; charset=utf-8');
       assert.strictEqual(res.headers['content-disposition'], 'inline; filename="report.txt"');
