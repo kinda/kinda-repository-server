@@ -8,7 +8,7 @@ let KindaObject = require('kinda-object');
 let KindaEventManager = require('kinda-event-manager');
 let util = require('kinda-util').create();
 
-// TODO: authorize handler, custom methods and event listeners should inherit from super classes
+// TODO: authorization verifier, authorize handler, custom methods and event listeners should inherit from super classes
 
 let RegisteredCollection = KindaObject.extend('RegisteredCollection', function() {
   this.include(KindaEventManager);
@@ -16,6 +16,7 @@ let RegisteredCollection = KindaObject.extend('RegisteredCollection', function()
   this.creator = function(name, options = {}) {
     this.name = name;
     this.slug = _.kebabCase(name);
+    this.verifyAuthorizationHandler = options.verifyAuthorizationHandler;
     this.authorizeHandler = options.authorizeHandler;
     this.collectionMethods = options.collectionMethods || {};
     this.itemMethods = options.itemMethods || {};
@@ -44,9 +45,13 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   //     async function(authorization) {
   //       // delete authorization token...
   //     },
-  //   authorizeHandler:
+  //   verifyAuthorizationHandler:
   //     async function(request) {
   //       return request.authorization === 'secret-token';
+  //     }
+  //   authorizeHandler:
+  //     async function(request) {
+  //       return request.verifyAuthorizationResult || request.method === 'GET';
   //     }
   this.creator = function(options = {}) {
     if (!options.repository) throw new Error('repository is missing');
@@ -56,6 +61,7 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       'signInWithCredentialsHandler',
       'signInWithAuthorizationHandler',
       'signOutHandler',
+      'verifyAuthorizationHandler',
       'authorizeHandler'
     ]));
     this.registeredCollections = {};
@@ -132,27 +138,56 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     return obj.query && obj.query.authorization;
   };
 
-  this.authorizeRequest = async function(ctx, method, request) {
-    if (!request) request = {};
+  this.verifyAuthorization = async function(ctx, method, request) {
     let handler;
+
     if (ctx.registeredCollection) {
-      handler = ctx.registeredCollection.authorizeHandler;
+      handler = ctx.registeredCollection.verifyAuthorizationHandler;
     }
-    if (!handler) handler = this.authorizeHandler;
-    if (!handler) return;
+
+    if (!handler) handler = this.verifyAuthorizationHandler;
+
+    if (!handler) return true;
+
+    request = _.clone(request) || {};
     request.authorization = ctx.authorization;
     request.collection = ctx.collection;
     request.remoteCollection = ctx.remoteCollection;
     request.method = method;
     request.options = ctx.options;
-    let isAuthorized = await handler(request);
-    if (!isAuthorized) ctx.throw(403, 'authorization failed');
+    return await handler(request);
+  };
+
+  this.authorize = async function(ctx, method, request) {
+    let handler;
+
+    if (ctx.registeredCollection) {
+      handler = ctx.registeredCollection.authorizeHandler;
+    }
+
+    if (!handler) handler = this.authorizeHandler;
+
+    if (!handler) return !!ctx.verifyAuthorizationResult;
+
+    request = _.clone(request) || {};
+    request.verifyAuthorizationResult = ctx.verifyAuthorizationResult;
+    request.collection = ctx.collection;
+    request.remoteCollection = ctx.remoteCollection;
+    request.method = method;
+    request.options = ctx.options;
+    return await handler(request);
+  };
+
+  this.verifyAuthorizationAndAuthorize = async function(ctx, method, request) {
+    ctx.verifyAuthorizationResult = await this.verifyAuthorization(ctx, method, request);
+    ctx.authorizeResult = await this.authorize(ctx, method, request);
+    if (!ctx.authorizeResult) ctx.throw(403, 'authorization failed');
   };
 
   // === Repository requests ===
 
   this.handleGetRepositoryIdRequest = async function(ctx) {
-    await this.authorizeRequest(ctx, 'getRepositoryId');
+    await this.verifyAuthorizationAndAuthorize(ctx, 'getRepositoryId');
     let id = await this.repository.getRepositoryId();
     ctx.body = { repositoryId: id };
   };
@@ -258,7 +293,8 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
 
   this.emitEvent = async function(ctx, event, request) {
     if (!request) request = {};
-    request.authorization = ctx.authorization;
+    request.verifyAuthorizationResult = ctx.verifyAuthorizationResult;
+    request.authorizeResult = ctx.authorizeResult;
     request.collection = ctx.collection;
     request.remoteCollection = ctx.remoteCollection;
     request.event = event;
@@ -277,7 +313,7 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
 
   this.handleGetItemRequest = async function(ctx, id) {
     let item = await this._getItem(ctx, id);
-    await this.authorizeRequest(ctx, 'getItem', { item });
+    await this.verifyAuthorizationAndAuthorize(ctx, 'getItem', { item });
     let remoteItem;
     if (item) {
       let className = item.class.name;
@@ -300,7 +336,7 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     let remoteItem = ctx.remoteCollection.unserializeItem(ctx.request.body);
     await ctx.collection.transaction(async function() {
       let item = ctx.collection.createItem(remoteItem);
-      await this.authorizeRequest(ctx, 'putItem', { remoteItem, item });
+      await this.verifyAuthorizationAndAuthorize(ctx, 'putItem', { remoteItem, item });
       await this.emitEvent(ctx, 'willPutItem', { remoteItem, item });
       await item.save(ctx.options);
       remoteItem = ctx.remoteCollection.unserializeItem(item);
@@ -319,7 +355,7 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     await ctx.collection.transaction(async function() {
       let errorIfMissing = ctx.options.createIfMissing ? false : undefined;
       let item = await this._getItem(ctx, id, errorIfMissing);
-      await this.authorizeRequest(ctx, 'putItem', { remoteItem, item });
+      await this.verifyAuthorizationAndAuthorize(ctx, 'putItem', { remoteItem, item });
       if (item) {
         item.updateValue(remoteItem);
       } else {
@@ -342,7 +378,7 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     let hasBeenDeleted = false;
     let item = await this._getItem(ctx, id);
     if (item) {
-      await this.authorizeRequest(ctx, 'deleteItem', { item });
+      await this.verifyAuthorizationAndAuthorize(ctx, 'deleteItem', { item });
       await this.emitEvent(ctx, 'willDeleteItem', { item });
       hasBeenDeleted = await item.delete(ctx.options);
       if (hasBeenDeleted) await this.emitEvent(ctx, 'didDeleteItem', { item });
@@ -352,7 +388,7 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
 
   this.handleGetItemsRequest = async function(ctx) {
     await this.readBody(ctx);
-    await this.authorizeRequest(ctx, 'getItems');
+    await this.verifyAuthorizationAndAuthorize(ctx, 'getItems');
     let items = await ctx.collection.getItems(ctx.request.body, ctx.options);
     let cache = {};
     let remoteItems = items.map(item => {
@@ -371,7 +407,7 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   };
 
   this.handleFindItemsRequest = async function(ctx) {
-    await this.authorizeRequest(ctx, 'findItems');
+    await this.verifyAuthorizationAndAuthorize(ctx, 'findItems');
     let items = await ctx.collection.findItems(ctx.options);
     let cache = {};
     let remoteItems = items.map(item => {
@@ -390,7 +426,7 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   };
 
   this.handleCountItemsRequest = async function(ctx) {
-    await this.authorizeRequest(ctx, 'countItems');
+    await this.verifyAuthorizationAndAuthorize(ctx, 'countItems');
     let count = await ctx.collection.countItems(ctx.options);
     await this.emitEvent(ctx, 'didCountItems', { count });
     ctx.status = 200;
@@ -398,7 +434,7 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   };
 
   this.handleFindAndDeleteItemsRequest = async function(ctx) {
-    await this.authorizeRequest(ctx, 'findAndDeleteItems');
+    await this.verifyAuthorizationAndAuthorize(ctx, 'findAndDeleteItems');
     let deletedItemsCount = await ctx.collection.findAndDeleteItems(ctx.options);
     await this.emitEvent(ctx, 'didFindAndDeleteItems');
     ctx.body = deletedItemsCount;
@@ -406,7 +442,7 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
 
   this.handleCustomCollectionMethodRequest = async function(ctx, method) {
     if (ctx.method === 'POST') await this.readBody(ctx);
-    await this.authorizeRequest(ctx, method);
+    await this.verifyAuthorizationAndAuthorize(ctx, method);
     let fn = ctx.registeredCollection.collectionMethods[method];
     if (fn === true) {
       fn = async function(request) {
@@ -422,7 +458,7 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
   this.handleCustomItemMethodRequest = async function(ctx, id, method) {
     if (ctx.method === 'POST') await this.readBody(ctx);
     let item = await this._getItem(ctx, id);
-    await this.authorizeRequest(ctx, method, { item });
+    await this.verifyAuthorizationAndAuthorize(ctx, method, { item });
     let fn = ctx.registeredCollection.itemMethods[method];
     if (fn === true) {
       fn = async function(request) {

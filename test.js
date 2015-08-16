@@ -79,7 +79,7 @@ suite('KindaRepositoryServer', function() {
       async signOutHandler(authorization) { // eslint-disable-line
         // delete authorization token
       },
-      async authorizeHandler(request) {
+      async verifyAuthorizationHandler(request) {
         return request.authorization === 'secret-token';
       },
       collections: {
