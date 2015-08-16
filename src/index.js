@@ -258,6 +258,7 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
 
   this.emitEvent = async function(ctx, event, request) {
     if (!request) request = {};
+    request.authorization = ctx.authorization;
     request.collection = ctx.collection;
     request.remoteCollection = ctx.remoteCollection;
     request.event = event;
