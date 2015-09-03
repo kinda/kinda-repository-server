@@ -228,7 +228,8 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     let authorization = await handler(ctx.request.body);
     if (!authorization) ctx.throw(403, 'sign in with credentials failed');
     ctx.status = 201;
-    ctx.body = authorization;
+    ctx.type = 'application/json';
+    ctx.body = JSON.stringify(authorization);
   };
 
   this.handleSignInWithAuthorizationRequest = async function(ctx, authorization) {
@@ -366,7 +367,6 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       await item.save(ctx.options);
       remoteItem = ctx.remoteCollection.createItem(item);
       await this.emitEvent(ctx, 'didPutItem', { remoteItem, item });
-      ctx.status = 200;
       ctx.body = {
         class: remoteItem.class.name,
         value: remoteItem.serialize()
@@ -383,6 +383,7 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       hasBeenDeleted = await item.delete(ctx.options);
       if (hasBeenDeleted) await this.emitEvent(ctx, 'didDeleteItem', { item });
     }
+    ctx.type = 'application/json';
     ctx.body = hasBeenDeleted;
   };
 
@@ -416,7 +417,6 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
       return remoteCollection.unserializeItem(item);
     });
     await this.emitEvent(ctx, 'didFindItems', { remoteItems, items });
-    ctx.status = 200;
     ctx.body = remoteItems.map(remoteItem => {
       return {
         class: remoteItem.class.name,
@@ -429,7 +429,7 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     await this.verifyAuthorizationAndAuthorize(ctx, 'countItems');
     let count = await ctx.collection.countItems(ctx.options);
     await this.emitEvent(ctx, 'didCountItems', { count });
-    ctx.status = 200;
+    ctx.type = 'application/json';
     ctx.body = count;
   };
 
@@ -437,6 +437,7 @@ let KindaRepositoryServer = KindaObject.extend('KindaRepositoryServer', function
     await this.verifyAuthorizationAndAuthorize(ctx, 'findAndDeleteItems');
     let deletedItemsCount = await ctx.collection.findAndDeleteItems(ctx.options);
     await this.emitEvent(ctx, 'didFindAndDeleteItems');
+    ctx.type = 'application/json';
     ctx.body = deletedItemsCount;
   };
 
